@@ -4,7 +4,7 @@ import math
 # --- 1. БАЗА ДАННЫХ (ПРАЙС-ЛИСТ) ---
 # В будущем эти словари могут заполняться функцией-парсером с вашего сайта
 BOARDS = {
-    "LikeWood Вельвет 140мм (Венге/Антрацит)": {"price": 438, "unit": "м.п.", "width_mm": 140, "length_m": None},
+    "LikeWood Вельвет 555555555555555 140мм (Венге/Антрацит)": {"price": 438, "unit": "м.п.", "width_mm": 140, "length_m": None},
     "LikeWood 3D тиснение 140мм": {"price": 530, "unit": "м.п.", "width_mm": 140, "length_m": None},
     "Woodvex Select 146мм (Венге) 3м": {"price": 2054, "unit": "шт", "width_mm": 146, "length_m": 3},
     "Террапол СМАРТ 130мм 3м": {"price": 2019, "unit": "шт", "width_mm": 130, "length_m": 3},
