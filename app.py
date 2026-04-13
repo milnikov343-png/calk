@@ -83,21 +83,22 @@ def get_plot(mode):
         if frame_choice:
             for j in range(math.ceil(width/2)+1): ax.plot([0, length], [j*2, j*2], color='red', lw=2)
     ax.set_xlim(0, length); ax.set_ylim(0, width); plt.axis('off')
+    
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight')
-    plt.close()
+    plt.close(fig)
+    buf.seek(0) # ИСПРАВЛЕНИЕ 1: Возвращаем курсор в начало картинки
     return buf
 
 # --- 5. ГЕНЕРАЦИЯ PDF ---
 def create_pdf():
     pdf = FPDF()
     pdf.add_page()
-    # Пытаемся подключить шрифт (файл DejaVuSans.ttf должен быть в репозитории!)
     try:
         pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
         pdf.set_font('DejaVu', '', 12)
     except:
-        pdf.set_font('Arial', '', 12) # Запасной вариант, если файла нет
+        pdf.set_font('Arial', '', 12)
     
     pdf.cell(200, 10, txt="Приложение №1 к договору: Коммерческое предложение", ln=True, align='C')
     pdf.cell(200, 10, txt=f"Клиент: {client_name} | Дата: {datetime.date.today()}", ln=True, align='L')
@@ -132,7 +133,8 @@ def create_pdf():
     img_buf = get_plot("board")
     pdf.image(img_buf, x=10, y=30, w=180)
     
-    return pdf.output()
+    # ИСПРАВЛЕНИЕ 2: Принудительно конвертируем bytearray в bytes для Streamlit
+    return bytes(pdf.output())
 
 # --- 6. ЭКРАН РЕЗУЛЬТАТОВ ---
 st.write(f"### Общая сумма: {b_total + j_total + f_total + clips_total + (area*2400) + (piles*3600):,.0f} руб.")
@@ -145,7 +147,7 @@ st.download_button(
     mime="application/pdf"
 )
 
-# Вывод чертежей на экран для контроля
+# Вывод чертежей на экран
 t1, t2 = st.tabs(["Чертеж доски", "Чертеж каркаса"])
-with t1: st.pyplot(plt.figure(canvas=get_plot("board"))) # Упрощенно для примера
+with t1: st.pyplot(plt.figure(canvas=get_plot("board")))
 with t2: st.pyplot(plt.figure(canvas=get_plot("frame")))
