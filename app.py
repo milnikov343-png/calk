@@ -7,97 +7,125 @@ from fpdf import FPDF
 import datetime
 import requests
 from bs4 import BeautifulSoup
+import re
 
-# --- 1. ПАРСИНГ И БАЗА ДАННЫХ ---
-# ttl=86400 означает, что кэш хранится 24 часа. Робот заходит на сайт только 1 раз в день.
-@st.cache_data(ttl=86400)
+# --- 1. УМНЫЙ ПАРСЕР САЙТА DACHA2000.RU ---
+@st.cache_data(ttl=43200) # Кэшируем цены на 12 часов, чтобы сайт работал быстро
 def load_price_data():
-    # Базовые словари (Fallback), если сайт временно недоступен или изменился дизайн
-    boards = {
-        "LikeWood": {
-            "Вельвет пустотелая 140x22": {
-                "3 метра": {"price": 438, "unit": "м.п.", "width_mm": 140, "length_m": 3.0},
-                "4 метра": {"price": 438, "unit": "м.п.", "width_mm": 140, "length_m": 4.0}
-            },
-            "3D тиснение 140x22": {
-                "3 метра": {"price": 530, "unit": "м.п.", "width_mm": 140, "length_m": 3.0},
-                "4 метра": {"price": 530, "unit": "м.п.", "width_mm": 140, "length_m": 4.0}
-            }
-        },
-        "Woodvex": {
-            "Select пустотелая 146x22": {
-                "3 метра": {"price": 2054, "unit": "шт", "width_mm": 146, "length_m": 3.0},
-                "4 метра": {"price": 2738, "unit": "шт", "width_mm": 146, "length_m": 4.0}
-            }
-        },
-        "Террапол": {
-            "СМАРТ 3D пустотелая 130x22": {
-                "3 метра": {"price": 2019, "unit": "шт", "width_mm": 130, "length_m": 3.0},
-                "4 метра": {"price": 2692, "unit": "шт", "width_mm": 130, "length_m": 4.0}
-            }
-        }
-    }
+    boards = {}
     pipes_joist = {"Труба 60х40х2": 219, "Труба 60х40х3": 290}
     pipes_frame = {"Труба 80х80х2": 403, "Труба 80х80х3": 475}
 
     try:
-        # ПРИМЕР ПАРСЕРА ДЛЯ ТРУБ (prometey-ural.ru)
+        # Робот стучится на страницу каталога (берем сразу много товаров)
+        url = "https://dacha2000.ru/terrasnaya-doska?limit=500"
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        resp = requests.get("https://prometey-ural.ru/catalog/truby/truby_profilnye/", headers=headers, timeout=5)
+        resp = requests.get(url, headers=headers, timeout=15)
+
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, 'html.parser')
-            # В реальном парсере здесь мы ищем таблицу или блоки с товарами:
-            # table = soup.find('table', class_='price-table')
-            # ... логика извлечения цифр ...
-            
-            # Для демонстрации успеха мы немного меняем базовую цену, 
-            # чтобы вы увидели, что парсер сработал:
-            pipes_joist["Труба 60х40х2"] = 219  # Сюда встанет переменная с сайта
-            
+            units = soup.find_all('div', class_='unit')
+
+            for unit in units:
+                name_meta = unit.find('meta', itemprop='name')
+                price_meta = unit.find('meta', itemprop='price')
+                price_div = unit.find('div', class_='unit_price')
+
+                if name_meta and price_meta and price_div:
+                    raw_name = name_meta['content']
+                    clean_name = raw_name.replace('Террасная доска ', '').replace('Террасная доска', '').strip()
+                    price_val = float(price_meta['content'])
+                    price_text = price_div.text.strip().lower()
+
+                    # 1. Определение единицы измерения
+                    unit_type = "шт" if "шт" in price_text else "м.п."
+
+                    # 2. Определение производителя
+                    manufacturer = "Другие бренды"
+                    brands = ["LikeWood", "Woodvex", "Террапол", "RusDecking", "Polivan Group", "CM Decking", "TimberTex", "Deckron", "TalverWood", "AIWOOD"]
+                    for b in brands:
+                        if b.lower() in clean_name.lower():
+                            manufacturer = b
+                            break
+
+                    # 3. Умный поиск ширины доски (ищем число от 130 до 200)
+                    width_mm = 140 # По умолчанию
+                    match_w = re.search(r'(1[3-9]\d|200)', clean_name)
+                    if match_w: width_mm = int(match_w.group(1))
+
+                    # 4. Умный поиск длины
+                    length_m = 3.0 # По умолчанию
+                    match_l = re.search(r'(2900|3000|4000|5800|6000)', clean_name)
+                    if match_l:
+                        length_m = int(match_l.group(1)) / 1000.0
+                    elif "3м" in clean_name or "3 м" in clean_name: length_m = 3.0
+                    elif "4м" in clean_name or "4 м" in clean_name: length_m = 4.0
+
+                    if manufacturer not in boards:
+                        boards[manufacturer] = {}
+
+                    # Сохраняем товар в базу
+                    boards[manufacturer][clean_name] = {
+                        "price": price_val,
+                        "unit": unit_type,
+                        "width_mm": width_mm,
+                        "length_m": length_m
+                    }
     except Exception as e:
-        print(f"Ошибка парсинга: {e}")
-        # Если сайт заблокировал робота (защита от DDoS), программа не упадет, 
-        # а использует базовые цены (Fallback)
+        print(f"Парсер не смог загрузить данные: {e}")
+
+    # Fallback-база (если парсер вдруг не сработал из-за защиты сайта)
+    if not boards:
+        boards = {
+            "Резервная база (Сайт недоступен)": {
+                "LikeWood Вельвет 140x22 4м": {"price": 438, "unit": "м.п.", "width_mm": 140, "length_m": 4.0},
+                "Woodvex Select 146x22 3м": {"price": 2054, "unit": "шт", "width_mm": 146, "length_m": 3.0}
+            }
+        }
 
     return boards, pipes_joist, pipes_frame
 
-# Загружаем данные через умный кэш
+# Запуск парсера
 PARSED_BOARDS, PIPES_JOIST, PIPES_FRAME = load_price_data()
 
-# Настройки бизнеса
 METAL_MARGIN = 1.15
 GAP_MM = 5
 JOIST_STEP_M = 0.4
 PILE_STEP_M = 2.0
-PILE_PRICE = 3600
 
 # --- 2. ИНТЕРФЕЙС ---
 st.set_page_config(page_title="Дача 2000 | Умный Калькулятор", layout="wide")
-st.title("🏗️ Расчет террасы (Авто-прайс)")
+st.title("🏗️ Проектный расчет террасы")
 
-# Кнопка для ручного сброса кэша (если цены на сайте поменялись только что)
-if st.button("🔄 Обновить цены с сайта"):
-    st.cache_data.clear()
-    st.rerun()
+# Кнопка принудительного обновления
+col_btn1, col_btn2 = st.columns([8, 2])
+with col_btn2:
+    if st.button("🔄 Обновить прайс с сайта", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
 st.sidebar.header("1. Размеры объекта")
 client_name = st.sidebar.text_input("ФИО Клиента:", "Иван Иванович")
-length = st.sidebar.number_input("Длина (м):", 1.0, 20.0, 6.0)
-width = st.sidebar.number_input("Ширина (м):", 1.0, 20.0, 4.0)
+length = st.sidebar.number_input("Длина (м):", 1.0, 30.0, 6.0)
+width = st.sidebar.number_input("Ширина (м):", 1.0, 30.0, 4.0)
 base_type = st.sidebar.radio("Основание:", ["Грунт (Сваи)", "Бетон"])
 
-st.sidebar.header("2. Выбор доски")
-manufacturer = st.sidebar.selectbox("Производитель:", list(PARSED_BOARDS.keys()))
-collection = st.sidebar.selectbox("Коллекция:", list(PARSED_BOARDS[manufacturer].keys()))
-b_length_choice = st.sidebar.selectbox("Длина хлыста:", list(PARSED_BOARDS[manufacturer][collection].keys()))
+# --- ИНТЕРФЕЙС ВЫБОРА ТОВАРА ---
+st.sidebar.header("2. Выбор доски (с сайта)")
+manufacturer = st.sidebar.selectbox("Бренд:", list(PARSED_BOARDS.keys()))
 
-b_info = PARSED_BOARDS[manufacturer][collection][b_length_choice]
-board_name_full = f"{manufacturer} {collection} ({b_length_choice})"
+# Если у бренда есть товары, показываем их
+if PARSED_BOARDS[manufacturer]:
+    board_name_full = st.sidebar.selectbox("Наименование:", list(PARSED_BOARDS[manufacturer].keys()))
+    b_info = PARSED_BOARDS[manufacturer][board_name_full]
+else:
+    st.sidebar.warning("Нет товаров в этой категории")
+    st.stop()
 
 st.sidebar.header("3. Подсистема")
 joist_choice = st.sidebar.selectbox("Лаги (60х40):", list(PIPES_JOIST.keys()))
 frame_choice = st.sidebar.selectbox("Каркас (80х80):", list(PIPES_FRAME.keys())) if "Грунт" in base_type else None
-steps_m = st.sidebar.number_input("Ступени (пог.м):", 0.0, 20.0, 3.0)
+steps_m = st.sidebar.number_input("Ступени (пог.м):", 0.0, 30.0, 3.0)
 
 # --- 3. РАСЧЕТЫ ---
 area = length * width
@@ -188,14 +216,16 @@ def create_pdf():
     except: pdf.set_font('Arial', '', 12)
     
     pdf.add_page()
-    pdf.cell(200, 10, txt="Приложение №1: Техническая спецификация (в мм)", ln=True, align='C')
+    pdf.cell(200, 10, txt="Смета и чертежи на устройство террасы", ln=True, align='C')
     pdf.cell(200, 10, txt=f"Клиент: {client_name} | Габариты: {int(length*1000)}x{int(width*1000)} мм", ln=True, align='L')
-    pdf.ln(10)
+    pdf.ln(5)
     
     pdf.set_fill_color(230, 230, 230)
     pdf.cell(110, 10, "Наименование", 1, 0, 'L', True); pdf.cell(40, 10, "Кол-во", 1, 0, 'C', True); pdf.cell(40, 10, "Сумма", 1, 1, 'C', True)
     for row in mat_table:
-        pdf.cell(110, 10, str(row["Наименование"]), 1); pdf.cell(40, 10, str(row["Кол-во"]), 1, 0, 'C'); pdf.cell(40, 10, f"{row['Сумма']:,.0f} р.", 1, 1, 'R')
+        # Обрезаем длинные названия с сайта, чтобы они поместились в таблицу PDF
+        short_name = str(row["Наименование"])[:45] + "..." if len(str(row["Наименование"])) > 45 else str(row["Наименование"])
+        pdf.cell(110, 10, short_name, 1); pdf.cell(40, 10, str(row["Кол-во"]), 1, 0, 'C'); pdf.cell(40, 10, f"{row['Сумма']:,.0f} р.", 1, 1, 'R')
         
     pdf.ln(5)
     pdf.cell(150, 10, "Строительно-монтажные работы", 1, 0, 'L', True); pdf.cell(40, 10, "Сумма", 1, 1, 'C', True)
