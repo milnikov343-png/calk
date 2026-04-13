@@ -21,10 +21,11 @@ METAL_MARGIN = 1.15
 GAP_MM = 5
 JOIST_STEP_M = 0.4
 PILE_STEP_M = 2.0
+PILE_PRICE = 3600
 
 # --- 2. ИНТЕРФЕЙС ---
-st.set_page_config(page_title="Дача 2000 | КП", layout="wide")
-st.title("🏗️ Расчет террасы и генерация КП")
+st.set_page_config(page_title="Дача 2000 | Единый стандарт ММ", layout="wide")
+st.title("🏗️ Расчет террасы (Размеры в ММ)")
 
 st.sidebar.header("Параметры")
 client_name = st.sidebar.text_input("ФИО Клиента:", "Иван Иванович")
@@ -53,162 +54,119 @@ j_total = j_m * j_price
 piles = 0
 f_m = 0
 f_total = 0
-f_price = 0
 if "Грунт" in base_type:
     pr, pc = math.ceil(length/PILE_STEP_M)+1, math.ceil(width/PILE_STEP_M)+1
     piles = pr * pc
     f_m = math.ceil(pc * length)
-    f_price = round(PIPES_FRAME[frame_choice] * METAL_MARGIN)
-    f_total = f_m * f_price
+    f_total = f_m * round(PIPES_FRAME[frame_choice] * METAL_MARGIN)
 
 clips_packs = math.ceil((j_rows * rows) / 100)
 clips_total = clips_packs * 2000
+grand_total = b_total + j_total + f_total + clips_total + (area * 2400) + (piles * 3600)
 
-# Формируем таблицы для вывода
-mat_table = [
-    {"Наименование": board_choice, "Кол-во": f"{b_qty} {b_info['unit']}", "Сумма": b_total},
-    {"Наименование": f"Лага {joist_choice}", "Кол-во": f"{j_m} м.п.", "Сумма": j_total},
-    {"Наименование": "Кляймеры (уп. 100шт)", "Кол-во": f"{clips_packs} уп", "Сумма": clips_total}
-]
-if frame_choice: 
-    mat_table.insert(1, {"Наименование": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
-
-work_table = [
-    {"Наименование": "Монтаж настила и лаг", "Сумма": area * 2400},
-]
-if piles > 0:
-    work_table.append({"Наименование": f"Установка свай ({piles} шт)", "Сумма": piles * 3600})
-
-grand_total = sum(item["Сумма"] for item in mat_table) + sum(item["Сумма"] for item in work_table)
-
-# --- 4. ФУНКЦИИ РИСОВАНИЯ ---
+# --- 4. ФУНКЦИИ РИСОВАНИЯ (ВСЁ В ММ) ---
 def get_plot(mode):
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = plt.subplots(figsize=(10, 6))
     
     if mode == "board":
         bl = b_info["length_m"]
         for r in range(rows):
             y, x = r * eff_w, 0
             if r % 2 != 0:
-                w = min(bl/2, length); ax.add_patch(patches.Rectangle((0, y), w, eff_w*0.8, color='#8d6e63'))
+                w = min(bl/2, length); ax.add_patch(patches.Rectangle((0, y), w, eff_w*0.8, color='#8d6e63', ec='black', lw=0.3))
                 x = w
             while x < length:
                 w = min(bl, length-x); ax.add_patch(patches.Rectangle((x, y), w, eff_w*0.8, color='#8d6e63', ec='black', lw=0.5))
                 x += bl
-                
+        # Размеры в ММ
+        ax.text(length/2, -0.4, f"Длина: {int(length*1000)} мм", ha='center', fontweight='bold', fontsize=10)
+        ax.text(-0.6, width/2, f"Ширина: {int(width*1000)} мм", va='center', rotation=90, fontweight='bold', fontsize=10)
+
     elif mode == "frame":
         for i in range(j_rows): 
             cx = min(i*JOIST_STEP_M, length)
-            ax.plot([cx, cx], [0, width], color='blue', lw=1, alpha=0.7)
+            ax.plot([cx, cx], [0, width], color='blue', lw=1, alpha=0.5)
+            if i == 0:
+                ax.annotate('', xy=(JOIST_STEP_M, width*0.1), xytext=(0, width*0.1), arrowprops=dict(arrowstyle='<->', color='blue'))
+                ax.text(JOIST_STEP_M/2, width*0.12, f"{int(JOIST_STEP_M*1000)} мм", color='blue', ha='center', fontsize=9)
+        
         if frame_choice:
-            for j in range(math.ceil(width/PILE_STEP_M)+1): 
+            num_f = math.ceil(width/PILE_STEP_M)+1
+            for j in range(num_f): 
                 cy = min(j*PILE_STEP_M, width)
-                ax.plot([0, length], [cy, cy], color='red', lw=2)
-                
+                ax.plot([0, length], [cy, cy], color='red', lw=2.5)
+                ax.text(0.1, cy+0.05, "Труба 80х80", color='red', fontsize=9, fontweight='bold')
+        
+        ax.text(length-1.5, -0.3, "Лаги 60х40", color='blue', fontsize=11)
+
     elif mode == "piles":
         pr, pc = math.ceil(length/PILE_STEP_M)+1, math.ceil(width/PILE_STEP_M)+1
+        sp_x = length/(pr-1) if pr>1 else length
+        sp_y = width/(pc-1) if pc>1 else width
         for i in range(pr):
             for j in range(pc):
-                px, py = min(i*PILE_STEP_M, length), min(j*PILE_STEP_M, width)
+                px, py = i*sp_x, j*sp_y
                 ax.add_patch(patches.Circle((px, py), 0.1, color='black'))
+                # Размеры по осям в ММ
+                if i < pr-1 and j == 0:
+                    ax.text(px + sp_x/2, py-0.4, f"{int(sp_x*1000)} мм", ha='center', fontsize=9)
+                if j < pc-1 and i == 0:
+                    ax.text(px-0.8, py + sp_y/2, f"{int(sp_y*1000)} мм", va='center', rotation=90, fontsize=9)
 
-    ax.set_xlim(-0.2, length+0.2); ax.set_ylim(-0.2, width+0.2); ax.set_aspect('equal')
+    ax.set_xlim(-1.0, length+0.5); ax.set_ylim(-1.0, width+0.5); ax.set_aspect('equal')
     plt.axis('off')
-    
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight', dpi=150)
-    plt.close(fig)
-    buf.seek(0)
+    buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150); plt.close(fig); buf.seek(0)
     return buf
 
 # --- 5. ГЕНЕРАЦИЯ PDF ---
 def create_pdf():
     pdf = FPDF()
-    pdf.add_page()
     try:
         pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
         pdf.set_font('DejaVu', '', 12)
-    except:
-        pdf.set_font('Arial', '', 12)
+    except: pdf.set_font('Arial', '', 12)
     
-    pdf.cell(200, 10, txt="Приложение №1 к договору: Смета и чертежи", ln=True, align='C')
-    pdf.cell(200, 10, txt=f"Клиент: {client_name} | Дата: {datetime.date.today()}", ln=True, align='L')
-    pdf.ln(5)
-    
-    # Таблица материалов
-    pdf.set_fill_color(240, 240, 240)
-    pdf.cell(110, 10, "Материалы", 1, 0, 'C', True)
-    pdf.cell(40, 10, "Кол-во", 1, 0, 'C', True)
-    pdf.cell(40, 10, "Сумма", 1, 1, 'C', True)
-    
-    for row in mat_table:
-        pdf.cell(110, 10, str(row["Наименование"]), 1)
-        pdf.cell(40, 10, str(row["Кол-во"]), 1, 0, 'C')
-        pdf.cell(40, 10, f"{row['Сумма']:,.0f} р.", 1, 1, 'C')
-        
-    pdf.ln(5)
-    # Таблица работ
-    pdf.cell(150, 10, "Строительно-монтажные работы", 1, 0, 'C', True)
-    pdf.cell(40, 10, "Сумма", 1, 1, 'C', True)
-    for row in work_table:
-        pdf.cell(150, 10, str(row["Наименование"]), 1)
-        pdf.cell(40, 10, f"{row['Сумма']:,.0f} р.", 1, 1, 'C')
-        
+    pdf.add_page()
+    pdf.cell(200, 10, txt="Приложение №1: Техническая спецификация (в мм)", ln=True, align='C')
+    pdf.cell(200, 10, txt=f"Клиент: {client_name} | Габариты: {int(length*1000)}x{int(width*1000)} мм", ln=True, align='L')
     pdf.ln(10)
-    pdf.set_font('DejaVu', '', 14)
+    
+    pdf.set_fill_color(230, 230, 230)
+    pdf.cell(110, 10, "Наименование позиции", 1, 0, 'L', True)
+    pdf.cell(80, 10, "Сумма", 1, 1, 'C', True)
+    
+    items = [(board_choice, b_total), (f"Лаги {joist_choice}", j_total), ("Кляймеры", clips_total)]
+    if frame_choice: items.insert(1, (f"Каркас {frame_choice}", f_total))
+    if piles > 0: items.append((f"Сваи ({piles} шт)", piles*3600))
+    items.append(("Монтажные работы (настил + ступени)", (area*2400) + 15600))
+    
+    for name, price in items:
+        pdf.cell(110, 10, name, 1)
+        pdf.cell(80, 10, f"{price:,.0f} руб.", 1, 1, 'R')
+    
+    pdf.ln(5); pdf.set_font('DejaVu', '', 14)
     pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
-    
-    # Вставляем чертежи на новые страницы
-    pdf.add_page()
-    pdf.cell(200, 10, txt="1. Схема раскладки террасной доски", ln=True, align='C')
-    pdf.image(get_plot("board"), x=15, y=30, w=180)
-    
-    pdf.add_page()
-    pdf.cell(200, 10, txt="2. Схема подсистемы (лаги и каркас)", ln=True, align='C')
-    pdf.image(get_plot("frame"), x=15, y=30, w=180)
-    
-    if piles > 0:
+
+    # Чертежи
+    for m, title in [("board", "Раскладка настила"), ("frame", "Металлокаркас"), ("piles", "Свайное поле")]:
+        if m == "piles" and piles == 0: continue
         pdf.add_page()
-        pdf.cell(200, 10, txt="3. Свайное поле (фундамент)", ln=True, align='C')
-        pdf.image(get_plot("piles"), x=15, y=30, w=180)
+        pdf.cell(200, 10, f"Схема: {title} (размеры в мм)", ln=True, align='C')
+        pdf.image(get_plot(m), x=15, y=40, w=180)
     
     return bytes(pdf.output())
 
-# --- 6. ЭКРАН РЕЗУЛЬТАТОВ (UI) ---
-st.markdown(f"<h2 style='text-align: center; color: #2e7d32;'>Общая смета: {grand_total:,.0f} руб.</h2>", unsafe_allow_html=True)
-
-# Кнопка скачивания по центру
+# --- 6. UI ---
+st.markdown(f"<h2 style='text-align: center; color: #2e7d32;'>Итого: {grand_total:,.0f} руб.</h2>", unsafe_allow_html=True)
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    st.download_button(
-        label="📥 СКАЧАТЬ СМЕТУ И ЧЕРТЕЖИ (PDF)",
-        data=create_pdf(),
-        file_name=f"KP_{client_name}.pdf",
-        mime="application/pdf",
-        use_container_width=True
-    )
+    st.download_button("📥 СКАЧАТЬ ПРОЕКТ (ММ, PDF)", data=create_pdf(), file_name=f"Project_{client_name}.pdf", mime="application/pdf", use_container_width=True)
 
 st.divider()
-
-# Возвращаем таблицы на экран
-colA, colB = st.columns(2)
-with colA:
-    st.markdown("#### 🧱 Материалы")
-    st.dataframe(mat_table, use_container_width=True, hide_index=True)
-with colB:
-    st.markdown("#### 🛠️ Работы")
-    st.dataframe(work_table, use_container_width=True, hide_index=True)
-
-st.divider()
-
-# Вывод чертежей во вкладках (теперь картинки будут отображаться корректно!)
-st.subheader("📐 Технические чертежи")
-if piles > 0:
-    t1, t2, t3 = st.tabs(["Чертеж доски", "Чертеж каркаса", "Свайное поле"])
-    with t1: st.image(get_plot("board"))
-    with t2: st.image(get_plot("frame"))
-    with t3: st.image(get_plot("piles"))
-else:
-    t1, t2 = st.tabs(["Чертеж доски", "Чертеж каркаса"])
-    with t1: st.image(get_plot("board"))
-    with t2: st.image(get_plot("frame"))
+st.subheader("📐 Техническая визуализация (ММ)")
+t1, t2, t3 = st.tabs(["Настил", "Каркас", "Сваи"])
+with t1: st.image(get_plot("board"), caption=f"Габариты: {int(length*1000)}x{int(width*1000)} мм")
+with t2: st.image(get_plot("frame"), caption="Лаги 60х40 и Каркас 80х80")
+with t3: 
+    if piles > 0: st.image(get_plot("piles"), caption="Осевые расстояния между сваями")
+    else: st.write("Фундамент не требуется.")
