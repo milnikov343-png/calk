@@ -4,16 +4,17 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import io
 
-# --- 1. БАЗА ДАННЫХ (ПРАЙС-ЛИСТ) ---
+# --- 1. БАЗА ДАННЫХ И НАСТРОЙКИ ---
+# Цены на доску (за п.м. или за штуку 3м)
 BOARDS = {
-    "LikeWood Вельвет 140мм (Венге/Антрацит)": {"price": 438, "unit": "м.п.", "width_mm": 140, "length_m": None},
-    "LikeWood 3D тиснение 140мм": {"price": 530, "unit": "м.п.", "width_mm": 140, "length_m": None},
-    "Woodvex Select 146мм (Венге) 3м": {"price": 2054, "unit": "шт", "width_mm": 146, "length_m": 3},
-    "Террапол СМАРТ 130мм 3м": {"price": 2019, "unit": "шт", "width_mm": 130, "length_m": 3},
+    "LikeWood Вельвет 140мм (Венге/Антрацит)": {"price": 438, "unit": "м.п.", "width_mm": 140, "length_m": 4.0},
+    "LikeWood 3D тиснение 140мм": {"price": 530, "unit": "м.п.", "width_mm": 140, "length_m": 4.0},
+    "Woodvex Select 146мм (Венге) 3м": {"price": 2054, "unit": "шт", "width_mm": 146, "length_m": 3.0},
+    "Террапол СМАРТ 130мм 3м": {"price": 2019, "unit": "шт", "width_mm": 130, "length_m": 3.0},
 }
 
+# Цены на трубы (базовые с сайта)
 PIPES_JOIST = {
-    "Труба 60х40х1,5": {"price_base": 173},
     "Труба 60х40х2": {"price_base": 219},
     "Труба 60х40х3": {"price_base": 290},
 }
@@ -21,177 +22,189 @@ PIPES_JOIST = {
 PIPES_FRAME = {
     "Труба 80х80х2": {"price_base": 403},
     "Труба 80х80х3": {"price_base": 475},
-    "Труба 100х100х3": {"price_base": 602},
 }
 
-# Настройки бизнеса
-METAL_MARGIN = 1.15 # Наценка на металл 15%
-GAP_MM = 5          # Тепловой зазор доски 5мм
-JOIST_STEP_M = 0.4  # Максимальный шаг лаг 400мм
-PILE_STEP_M = 2.0   # Максимальный шаг свай/каркаса 2м
-PILE_PRICE = 3600   # Цена сваи с монтажом
+# Бизнес-логика
+METAL_MARGIN = 1.15  # Наценка 15%
+GAP_MM = 5           # Зазор между досками
+JOIST_STEP_M = 0.4   # Шаг лаг 400мм
+PILE_STEP_M = 2.0    # Шаг опор 2000мм
+PILE_PRICE = 3600    # Свая + монтаж
 
-# --- 2. НАСТРОЙКА ИНТЕРФЕЙСА ---
-st.set_page_config(page_title="Калькулятор Дача 2000", layout="wide")
-st.title("🏗️ Калькулятор расчета террасы")
+# --- 2. ИНТЕРФЕЙС ---
+st.set_page_config(page_title="Дача 2000 | Калькулятор террас", layout="wide")
+st.title("🏗️ Профессиональный расчет террасы")
 
-# --- 3. ВВОД ПАРАМЕТРОВ ---
-st.sidebar.header("Параметры объекта")
-length = st.sidebar.number_input("Длина террасы (м):", min_value=1.0, value=6.0, step=0.1)
-width = st.sidebar.number_input("Ширина террасы (м):", min_value=1.0, value=4.0, step=0.1)
-base_type = st.sidebar.radio("Основание:", ["Грунт (Сваи + Каркас)", "Бетон (Только лаги)"])
+st.sidebar.header("1. Размеры и Основание")
+length = st.sidebar.number_input("Длина террасы (вдоль доски), м:", min_value=1.0, value=6.0, step=0.1)
+width = st.sidebar.number_input("Ширина террасы (поперек доски), м:", min_value=1.0, value=4.0, step=0.1)
+base_type = st.sidebar.radio("Тип основания:", ["Грунт (Сваи + Каркас 80х80)", "Бетон (Только лаги)"])
 
-st.sidebar.header("Материалы")
-board_choice = st.sidebar.selectbox("Террасная доска:", list(BOARDS.keys()))
-joist_choice = st.sidebar.selectbox("Труба для лаг:", list(PIPES_JOIST.keys()))
+st.sidebar.header("2. Материалы")
+board_choice = st.sidebar.selectbox("Выберите доску:", list(BOARDS.keys()))
+joist_choice = st.sidebar.selectbox("Труба для лаг (60х40):", list(PIPES_JOIST.keys()))
 
 frame_choice = None
-if base_type == "Грунт (Сваи + Каркас)":
-    frame_choice = st.sidebar.selectbox("Труба для каркаса:", list(PIPES_FRAME.keys()))
+if "Грунт" in base_type:
+    frame_choice = st.sidebar.selectbox("Труба каркаса (80х80):", list(PIPES_FRAME.keys()))
 
-st.sidebar.header("Доп. работы")
-steps_m = st.sidebar.number_input("Ступени (пог.м):", min_value=0.0, value=3.0, step=0.1)
-need_delivery = st.sidebar.checkbox("Доставка (15 000 руб)", value=True)
+st.sidebar.header("3. Дополнительно")
+steps_m = st.sidebar.number_input("Ступени (пог.м):", value=3.0)
+delivery = st.sidebar.checkbox("Доставка и ГСМ (15 000 руб)", value=True)
 
-
-# --- 4. ИНЖЕНЕРНАЯ МАТЕМАТИКА ---
-area = length * width
-
-# Раскладка доски (с учетом зазора)
-board_data = BOARDS[board_choice]
-eff_width_m = (board_data["width_mm"] + GAP_MM) / 1000
+# --- 3. РАСЧЕТЫ ---
+board_info = BOARDS[board_choice]
+# Расчет рядов доски с учетом зазора 5мм
+eff_width_m = (board_info["width_mm"] + GAP_MM) / 1000
 board_rows = math.ceil(width / eff_width_m)
 total_board_meters = board_rows * length
 
-board_qty = 0
-board_total_price = 0
-if board_data["unit"] == "м.п.":
+# Итоговое кол-во досок
+if board_info["unit"] == "м.п.":
     board_qty = math.ceil(total_board_meters)
-    board_total_price = board_qty * board_data["price"]
+    board_total_price = board_qty * board_info["price"]
 else:
-    board_qty = math.ceil(total_board_meters / board_data["length_m"])
-    board_total_price = board_qty * board_data["price"]
+    board_qty = math.ceil(total_board_meters / board_info["length_m"])
+    board_total_price = board_qty * board_info["price"]
 
-# Подсистема: Лаги
+# Расчет лаг (60х40)
 joist_rows = math.ceil(length / JOIST_STEP_M) + 1
 joist_meters = math.ceil(joist_rows * width)
-joist_price_client = round(PIPES_JOIST[joist_choice]["price_base"] * METAL_MARGIN)
-joist_total_price = joist_meters * joist_price_client
+price_joist_client = round(PIPES_JOIST[joist_choice]["price_base"] * METAL_MARGIN)
+joist_total_price = joist_meters * price_joist_client
 
-# Подсистема: Каркас и Сваи
+# Расчет каркаса и свай
 piles_qty = 0
 frame_meters = 0
 frame_total_price = 0
-frame_price_client = 0
+price_frame_client = 0
 
-if base_type == "Грунт (Сваи + Каркас)":
-    piles_length = math.ceil(length / PILE_STEP_M) + 1
-    piles_width = math.ceil(width / PILE_STEP_M) + 1
-    piles_qty = piles_length * piles_width
+if "Грунт" in base_type:
+    p_rows = math.ceil(length / PILE_STEP_M) + 1
+    p_cols = math.ceil(width / PILE_STEP_M) + 1
+    piles_qty = p_rows * p_cols
     
-    frame_meters = math.ceil(piles_width * length)
-    frame_price_client = round(PIPES_FRAME[frame_choice]["price_base"] * METAL_MARGIN)
-    frame_total_price = frame_meters * frame_price_client
+    # Труба 80х80 идет вдоль длины по рядам свай
+    frame_meters = math.ceil(p_cols * length)
+    price_frame_client = round(PIPES_FRAME[frame_choice]["price_base"] * METAL_MARGIN)
+    frame_total_price = frame_meters * price_frame_client
 
-# Крепеж (Кляймеры)
-clips_exact = joist_rows * board_rows
-clips_packs = math.ceil(clips_exact / 100)
+# Кляймеры
+clips_qty = math.ceil((joist_rows * board_rows) / 100) * 100
+clips_packs = clips_qty // 100
 clips_price = clips_packs * 2000
 
 # Работы
-labor_board = area * 2400
+labor_board = (length * width) * 2400
+labor_piles = piles_qty * 3600
 labor_steps = steps_m * 5200
 
+# --- 4. ВЫВОД СМЕТЫ ---
+st.subheader(f"Результаты расчета для террасы {length} x {width} м")
 
-# --- 5. ВЫВОД РЕЗУЛЬТАТОВ (СМЕТА) ---
-st.subheader(f"Площадь террасы: {area:.1f} м²")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown("### 🧱 Материалы")
-    st.info("К трубам автоматически применена наценка 15%")
-    
-    mat_data = [
-        {"Наименование": board_choice, "Кол-во": board_qty, "Ед.изм": board_data["unit"], "Цена": board_data["price"], "Сумма": board_total_price},
-        {"Наименование": joist_choice, "Кол-во": joist_meters, "Ед.изм": "м.п.", "Цена": joist_price_client, "Сумма": joist_total_price},
-        {"Наименование": "Упаковка кляймеров (100шт)", "Кол-во": clips_packs, "Ед.изм": "уп", "Цена": 2000, "Сумма": clips_price},
+c1, c2 = st.columns(2)
+with c1:
+    st.markdown("#### 🧱 Материалы (Цены клиента)")
+    mat_table = [
+        {"Наименование": board_choice, "Кол-во": board_qty, "Ед.": board_info["unit"], "Сумма": board_total_price},
+        {"Наименование": f"Лаги {joist_choice}", "Кол-во": joist_meters, "Ед.": "м.п.", "Сумма": joist_total_price},
+        {"Наименование": "Кляймеры (уп. 100шт)", "Кол-во": clips_packs, "Ед.": "уп", "Сумма": clips_price},
     ]
-    if base_type == "Грунт (Сваи + Каркас)":
-        mat_data.insert(1, {"Наименование": frame_choice, "Кол-во": frame_meters, "Ед.изм": "м.п.", "Цена": frame_price_client, "Сумма": frame_total_price})
+    if frame_choice:
+        mat_table.insert(1, {"Наименование": f"Каркас {frame_choice}", "Кол-во": frame_meters, "Ед.": "м.п.", "Сумма": frame_total_price})
     
-    st.dataframe(mat_data, use_container_width=True)
-    total_materials = sum(item["Сумма"] for item in mat_data)
-    st.write(f"**Итого материалы:** {total_materials:,.0f} руб.".replace(',', ' '))
+    st.table(mat_table)
+    total_m = sum(item["Сумма"] for item in mat_table)
+    st.write(f"**Итого за материалы:** {total_m:,.0f} руб.")
 
-with col2:
-    st.markdown("### 🛠️ Работы и Услуги")
-    
-    work_data = [
-        {"Наименование": "Монтаж ДПК доски и лаг", "Сумма": labor_board},
-        {"Наименование": "Монтаж ступеней", "Сумма": labor_steps},
+with c2:
+    st.markdown("#### 🛠️ Работы и Услуги")
+    work_table = [
+        {"Услуга": "Монтаж настила и лаг", "Сумма": labor_board},
+        {"Услуга": "Монтаж ступеней", "Сумма": labor_steps},
     ]
     if piles_qty > 0:
-        work_data.append({"Наименование": f"Сваи с монтажом ({piles_qty} шт)", "Сумма": piles_qty * PILE_PRICE})
-    if need_delivery:
-        work_data.append({"Наименование": "Доставка", "Сумма": 15000})
+        work_table.append({"Услуга": f"Установка свай ({piles_qty} шт)", "Сумма": labor_piles})
+    if delivery:
+        work_table.append({"Услуга": "Доставка и логистика", "Сумма": 15000})
         
-    st.dataframe(work_data, use_container_width=True)
-    total_works = sum(item["Сумма"] for item in work_data)
-    st.write(f"**Итого работы:** {total_works:,.0f} руб.".replace(',', ' '))
+    st.table(work_table)
+    total_w = sum(item["Сумма"] for item in work_table)
+    st.write(f"**Итого за работы:** {total_w:,.0f} руб.")
 
+st.success(f"### ОБЩАЯ СТОИМОСТЬ: {total_m + total_w:,.0f} руб.")
+
+# --- 5. ВИЗУАЛИЗАЦИЯ (ЧЕРТЕЖИ) ---
 st.divider()
-grand_total = total_materials + total_works
-st.markdown(f"<h2 style='text-align: center; color: #2e7d32;'>Общая смета: {grand_total:,.0f} руб.</h2>", unsafe_allow_html=True)
-st.divider()
+st.subheader("📐 Технические чертежи")
 
-# --- 6. ОТРИСОВКА ЧЕРТЕЖА ---
-st.markdown("### 📐 Чертеж раскладки доски (Шахматка)")
+# Создаем вкладки для разных слоев
+if "Грунт" in base_type:
+    t_board, t_frame, t_piles = st.tabs(["1. Раскладка доски", "2. Металлокаркас", "3. Свайное поле"])
+else:
+    t_board, t_frame = st.tabs(["1. Раскладка доски", "2. Подсистема (Лаги)"])
+    t_piles = None
 
-def draw_terrace(length_m, width_m, board_width_mm, board_length_m):
+# Функция для рисования досок
+def plot_boards():
     fig, ax = plt.subplots(figsize=(10, 5))
-    eff_width_m = (board_width_mm + GAP_MM) / 1000
-    rows = int(width_m / eff_width_m)
+    b_len = board_info["length_m"]
+    for r in range(board_rows):
+        y = r * eff_width_m
+        x = 0
+        offset = (b_len / 2) if (r % 2 != 0) else 0
+        
+        # Первая доска в ряду (с учетом смещения)
+        if offset > 0:
+            w = min(offset, length)
+            ax.add_patch(patches.Rectangle((0, y), w, eff_width_m*0.9, facecolor='#8d6e63', edgecolor='black', linewidth=0.5))
+            x = w
+            
+        while x < length:
+            w = min(b_len, length - x)
+            ax.add_patch(patches.Rectangle((x, y), w, eff_width_m*0.9, facecolor='#8d6e63', edgecolor='black', linewidth=0.5))
+            x += b_len
+            
+    ax.set_xlim(0, length); ax.set_ylim(0, width); ax.set_aspect('equal')
+    plt.axis('off'); return fig
+
+# Функция для рисования каркаса
+def plot_frame():
+    fig, ax = plt.subplots(figsize=(10, 5))
+    # Рисуем лаги 60х40 (вертикальные синие линии)
+    for i in range(joist_rows):
+        cur_x = i * JOIST_STEP_M if (i * JOIST_STEP_M < length) else length
+        ax.plot([cur_x, cur_x], [0, width], color='blue', linewidth=1, alpha=0.6)
     
-    for row in range(rows):
-        y = row * eff_width_m
-        if row % 2 == 0:
-            x = 0
-            while x < length_m:
-                w = min(board_length_m, length_m - x)
-                rect = patches.Rectangle((x, y), w, eff_width_m*0.85, 
-                                         linewidth=1, edgecolor='#4e342e', facecolor='#d7ccc8')
-                ax.add_patch(rect)
-                x += board_length_m
-        else:
-            x = 0
-            w = min(board_length_m / 2, length_m)
-            rect = patches.Rectangle((x, y), w, eff_width_m*0.85, 
-                                     linewidth=1, edgecolor='#4e342e', facecolor='#d7ccc8')
-            ax.add_patch(rect)
-            x += w
-            while x < length_m:
-                w = min(board_length_m, length_m - x)
-                rect = patches.Rectangle((x, y), w, eff_width_m*0.85, 
-                                         linewidth=1, edgecolor='#4e342e', facecolor='#d7ccc8')
-                ax.add_patch(rect)
-                x += board_length_m
+    # Рисуем трубы 80х80 (горизонтальные красные линии)
+    if "Грунт" in base_type:
+        num_lines = math.ceil(width / PILE_STEP_M) + 1
+        for j in range(num_lines):
+            cur_y = j * PILE_STEP_M if (j * PILE_STEP_M < width) else width
+            ax.plot([0, length], [cur_y, cur_y], color='red', linewidth=3)
+            
+    ax.set_xlim(0, length); ax.set_ylim(0, width); ax.set_aspect('equal')
+    plt.axis('off'); return fig
 
-    ax.set_xlim(0, length_m)
-    ax.set_ylim(0, width_m)
-    ax.set_aspect('equal')
-    plt.axis('off')
-    return fig
+# Функция для рисования свай
+def plot_piles():
+    fig, ax = plt.subplots(figsize=(10, 5))
+    p_rows = math.ceil(length / PILE_STEP_M) + 1
+    p_cols = math.ceil(width / PILE_STEP_M) + 1
+    for i in range(p_rows):
+        for j in range(p_cols):
+            px = i * PILE_STEP_M if (i * PILE_STEP_M < length) else length
+            py = j * PILE_STEP_M if (j * PILE_STEP_M < width) else width
+            ax.add_patch(patches.Circle((px, py), 0.1, color='black'))
+    ax.set_xlim(-0.5, length+0.5); ax.set_ylim(-0.5, width+0.5); ax.set_aspect('equal')
+    plt.axis('off'); return fig
 
-b_length = board_data["length_m"] if board_data["length_m"] else 4.0
-fig = draw_terrace(length, width, board_data["width_mm"], b_length)
-st.pyplot(fig)
+with t_board:
+    st.pyplot(plot_boards())
+with t_frame:
+    st.pyplot(plot_frame())
+if t_piles:
+    with t_piles:
+        st.pyplot(plot_piles())
 
-buf = io.BytesIO()
-fig.savefig(buf, format="png", bbox_inches='tight', dpi=300)
-st.download_button(
-    label="💾 Скачать чертеж для монтажников",
-    data=buf.getvalue(),
-    file_name="terrace_layout.png",
-    mime="image/png",
-)
+st.info("💡 Нажмите правой кнопкой мыши на чертеж, чтобы сохранить его как картинку.")
