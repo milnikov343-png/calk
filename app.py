@@ -27,7 +27,7 @@ def load_google_sheet():
             width = int(row['Ширина (мм)'])
             length_m = float(row['Длина (м)'])
 
-            # Очищаем имя от размеров для группировки длин в единую коллекцию
+            # Очищаем название от длины, чтобы сгруппировать 3м и 4м в одну коллекцию
             base_name = re.sub(r'\d{4}[хx*]\d{2,3}[хx*]\d{2,3}', '', raw_name, flags=re.IGNORECASE)
             base_name = re.sub(r'\s*\d+(\.\d+)?\s*м\b', '', base_name, flags=re.IGNORECASE).replace('  ', ' ').strip()
             
@@ -56,76 +56,89 @@ GAP_MM = 5
 JOIST_STEP_M = 0.4
 PILE_STEP_M = 2.0
 
-# --- АЛГОРИТМ РАСКРОЯ И ОПТИМИЗАЦИИ ОБРЕЗКОВ ---
+# --- 2. ИНЖЕНЕРНЫЕ АЛГОРИТМЫ РАСКРОЯ ---
 def generate_deck_layout(length, width, eff_w, step, pattern, collection_boards):
     rows_count = math.ceil(width / eff_w)
     layout = []
     joint_xs = set()
     
-    # Ищем самую длинную доску в коллекции, чтобы задать ритм
+    # Берем самую длинную доску в коллекции за основу
     main_len = max([b['length_m'] for b in collection_boards])
+    eff_main = math.floor(main_len / step) * step # Выравниваем по лагам
     
-    # Минимальный кусок = 1/3 доски, округленный до шага лаг (400 мм)
-    min_piece = max(step, round((main_len / 3) / step) * step)
+    # Жесткое правило: кусок не может быть меньше 1/3 доски (с округлением по лагам)
+    min_allowed = math.ceil((eff_main / 3) / step) * step
+    if min_allowed < step * 2: min_allowed = step * 2 # Минимум 2 шага лаг (800мм)
 
     for r in range(rows_count):
-        if pattern == "Палубная (сдвиг 1/3)":
-            offset = (r % 3) * min_piece
-        else: # Симметричная (сдвиг 1/2)
-            half_shift = round((main_len / 2) / step) * step
-            offset = 0 if r % 2 == 0 else half_shift
-            
         pieces = []
         rem = length
         
-        # Высчитываем первый кусок с учетом сдвига
-        first = main_len - offset
-        if first > rem: first = rem
-        first = math.floor(first / step) * step # Привязываем стык строго к лаге
-        if first == 0 and rem > 0: first = min(step, rem)
-        
-        pieces.append(first)
-        rem -= first
-        
+        if pattern == "Симметричная (в полдоски)":
+            # Четные ряды (А) начинаются с 0, нечетные (Б) сдвинуты ровно на половину
+            offset = 0 if r % 2 == 0 else (eff_main / 2)
+            offset = math.floor(offset / step) * step
+            
+            first_joint = eff_main - offset
+            while first_joint < min_allowed and first_joint < length:
+                first_joint += eff_main
+                
+            if first_joint > length: first_joint = length
+            pieces.append(round(first_joint, 2))
+            rem = round(rem - first_joint, 2)
+            
+        else: # Палубная (сдвиг 1/3)
+            shift_step = math.floor((eff_main / 3) / step) * step
+            if shift_step == 0: shift_step = step
+            offset = (r % 3) * shift_step
+            
+            first_joint = eff_main - offset
+            if first_joint < min_allowed and first_joint < length:
+                first_joint += eff_main
+                
+            if first_joint > length: first_joint = length
+            pieces.append(round(first_joint, 2))
+            rem = round(rem - first_joint, 2)
+            
         # Заполняем середину целыми досками
         while rem > 0.01:
-            nxt = min(main_len, rem)
-            nxt = math.floor(nxt / step) * step
-            if nxt == 0: nxt = rem
+            nxt = min(eff_main, rem)
+            nxt = round(math.floor(nxt / step) * step, 2)
+            if nxt <= 0: nxt = step
+            if nxt > rem: nxt = rem
             pieces.append(nxt)
-            rem -= nxt
-            
-        # Защита от коротких "огрызков" по краям
-        if len(pieces) > 1 and pieces[-1] < min_piece:
-            shortfall = math.ceil((min_piece - pieces[-1]) / step) * step
-            if pieces[-2] > min_piece + shortfall:
-                pieces[-2] -= shortfall
-                pieces[-1] += shortfall
+            rem = round(rem - nxt, 2)
+                
+        # ЗАЩИТА ОТ ОГРЫЗКОВ: Если последний кусок меньше 1/3, забираем длину у предпоследнего
+        if len(pieces) > 1 and pieces[-1] < min_allowed:
+            deficit = min_allowed - pieces[-1]
+            deficit = math.ceil(deficit / step) * step
+            if pieces[-2] > min_allowed + deficit:
+                pieces[-2] = round(pieces[-2] - deficit, 2)
+                pieces[-1] = round(pieces[-1] + deficit, 2)
+                
+        layout.append(pieces)
         
-        row_clean = [round(p, 2) for p in pieces if p > 0.01]
-        layout.append(row_clean)
-        
-        # Запоминаем координаты всех стыков для двойных лаг
+        # Фиксируем координаты стыков для отрисовки двойных лаг
         cx = 0
-        for p in row_clean[:-1]:
-            cx += p
-            joint_xs.add(round(cx, 2))
+        for p in pieces[:-1]:
+            cx = round(cx + p, 2)
+            joint_xs.add(cx)
             
     return layout, joint_xs
 
 def optimize_waste(pieces_list, collection_boards):
-    # Сортируем доски из коллекции по длине (от меньшей к большей)
+    # Виртуально укладываем все куски в целые хлысты (алгоритм First-Fit)
     boards_sorted = sorted(collection_boards, key=lambda x: x['length_m'])
     pieces_list = sorted(pieces_list, reverse=True)
     bins = []
     
-    # Распределяем обрезки по целым доскам (алгоритм First Fit Decreasing)
     for p in pieces_list:
         placed = False
         bins.sort(key=lambda b: b['board']['length_m'] - b['used'])
         for b in bins:
-            if b['board']['length_m'] - b['used'] >= p:
-                b['used'] += p
+            if round(b['board']['length_m'] - b['used'], 2) >= p:
+                b['used'] = round(b['used'] + p, 2)
                 placed = True
                 break
         if not placed:
@@ -140,9 +153,9 @@ def optimize_waste(pieces_list, collection_boards):
         summary[name]["sum"] += b['board']['board_cost']
     return summary
 
-# --- 2. ИНТЕРФЕЙС ---
+# --- 3. ИНТЕРФЕЙС ---
 st.set_page_config(page_title="Дача 2000 | Умный Калькулятор", layout="wide")
-st.title("🏗️ Профессиональный расчет террасы")
+st.title("🏗️ Профессиональный проект террасы")
 
 col_h1, col_h2 = st.columns([8, 2])
 with col_h2:
@@ -151,7 +164,7 @@ with col_h2:
 
 st.sidebar.header("1. Параметры объекта")
 client_name = st.sidebar.text_input("ФИО Клиента:", "Иван Иванович")
-length = st.sidebar.number_input("Длина (вдоль досок), м:", 1.0, 50.0, 6.0)
+length = st.sidebar.number_input("Длина (вдоль досок), м:", 1.0, 50.0, 7.0)
 width = st.sidebar.number_input("Ширина террасы, м:", 1.0, 50.0, 4.0)
 base_type = st.sidebar.radio("Основание:", ["Грунт (Сваи)", "Бетон"])
 
@@ -164,25 +177,25 @@ if PARSED_BOARDS[brand_choice]:
 else:
     st.stop()
 
-pattern_choice = st.sidebar.radio("Раскладка доски:", ["Палубная (сдвиг 1/3)", "Симметричная (сдвиг 1/2)"])
+pattern_choice = st.sidebar.radio("Раскладка доски:", ["Палубная (сдвиг 1/3)", "Симметричная (в полдоски)"])
 
 st.sidebar.header("3. Подсистема")
 joist_choice = st.sidebar.selectbox("Лаги (60х40):", list(PIPES_JOIST.keys()))
 frame_choice = st.sidebar.selectbox("Каркас (80х80):", list(PIPES_FRAME.keys())) if "Грунт" in base_type else None
 steps_m = st.sidebar.number_input("Ступени (пог.м):", 0.0, 50.0, 0.0)
 
-# --- 3. РАСЧЕТЫ С АВТОМАТИЗАЦИЕЙ ---
+# --- 4. ОСНОВНЫЕ РАСЧЕТЫ ---
 area = length * width
 
-# 1. Генерируем раскладку и находим координаты двойных лаг
+# Генерация настила и стыков
 layout_matrix, joint_xs = generate_deck_layout(length, width, eff_w, JOIST_STEP_M, pattern_choice, collection_boards)
 
-# 2. Собираем все нарезанные куски и пакуем их в целые доски
+# Сбор и упаковка обрезков в целые доски
 flat_pieces = [p for row in layout_matrix for p in row]
 board_totals = optimize_waste(flat_pieces, collection_boards)
 
-# 3. Расчет подсистемы (УЧИТЫВАЕМ ДВОЙНЫЕ ЛАГИ!)
-extra_joists = len(joint_xs) # Каждому стыку по дополнительной лаге!
+# Расчет подсистемы с учетом ДВОЙНЫЕ ЛАГ
+extra_joists = len(joint_xs) # Добавляем лагу под каждый стык
 j_m = math.ceil((math.ceil(length / JOIST_STEP_M) + 1 + extra_joists) * width)
 j_total = j_m * round(PIPES_JOIST[joist_choice] * METAL_MARGIN)
 
@@ -193,18 +206,18 @@ if "Грунт" in base_type:
     f_m = math.ceil(pc * length)
     f_total = f_m * round(PIPES_FRAME[frame_choice] * METAL_MARGIN)
 
-clips_packs = math.ceil((width/eff_w * (length/JOIST_STEP_M + extra_joists)) / 100)
+clips_packs = math.ceil((width/eff_w * (math.ceil(length/JOIST_STEP_M) + extra_joists)) / 100)
 clips_total = clips_packs * 2200
 
 work_base = area * 2400; work_steps = steps_m * 5200; work_piles = piles * 3600
 
-# Формируем таблицы
+# Таблицы
 mat_data = []
 for name, data in board_totals.items():
     mat_data.append({"Позиция": name, "Кол-во": f"{data['qty']} шт", "Сумма": data['sum']})
 
 mat_data.extend([
-    {"Позиция": f"Лага {joist_choice}", "Кол-во": f"{j_m} м.п.", "Сумма": j_total},
+    {"Позиция": f"Лага {joist_choice} (с учетом усиления стыков)", "Кол-во": f"{j_m} м.п.", "Сумма": j_total},
     {"Позиция": "Кляймеры (уп. 100 шт)", "Кол-во": f"{clips_packs} уп.", "Сумма": clips_total}
 ])
 if frame_choice: mat_data.insert(len(board_totals)+1, {"Позиция": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
@@ -215,7 +228,7 @@ if piles > 0: work_data.append({"Позиция": f"Монтаж свай ({pile
 
 grand_total = sum(d['Сумма'] for d in mat_data) + sum(d['Сумма'] for d in work_data)
 
-# --- 4. ЧЕРТЕЖИ ---
+# --- 5. ЧЕРТЕЖИ ---
 def get_plot(mode):
     fig, ax = plt.subplots(figsize=(10, 6))
     num_p_x = math.ceil(length/PILE_STEP_M) + 1; num_p_y = math.ceil(width/PILE_STEP_M) + 1
@@ -232,23 +245,24 @@ def get_plot(mode):
         ax.text(-0.6, width/2, f"Ширина: {int(width*1000)} мм", va='center', rotation=90, fontweight='bold', fontsize=10)
 
     elif mode == "frame":
-        # 1. Стандартная сетка лаг (синяя)
+        # Сетка лаг (синяя)
         for i in range(math.ceil(length / JOIST_STEP_M) + 1): 
-            cx = min(i * JOIST_STEP_M, length); ax.plot([cx, cx], [0, width], color='blue', lw=1, alpha=0.4)
+            cx = min(i * JOIST_STEP_M, length); ax.plot([cx, cx], [0, width], color='blue', lw=1, alpha=0.3)
             if i == 0:
                 ax.annotate('', xy=(JOIST_STEP_M, width*0.1), xytext=(0, width*0.1), arrowprops=dict(arrowstyle='<->', color='blue'))
                 ax.text(JOIST_STEP_M/2, width*0.12, f"{int(JOIST_STEP_M*1000)} мм", color='blue', ha='center', fontsize=9)
         
-        # 2. ДВОЙНЫЕ ЛАГИ ПОД СТЫКАМИ (голубые, сдвиг +50мм)
+        # Двойные лаги (голубые)
         for jx in joint_xs:
-            ax.plot([jx+0.05, jx+0.05], [0, width], color='cyan', lw=1.5, alpha=0.9)
+            ax.plot([jx-0.03, jx-0.03], [0, width], color='c', lw=1.5, alpha=0.9)
+            ax.plot([jx+0.03, jx+0.03], [0, width], color='c', lw=1.5, alpha=0.9)
             
-        # 3. Несущие балки (красные)
+        # Несущие балки (красные)
         if frame_choice:
             for j in range(num_p_y):
                 cy = j * step_y; ax.plot([0, length], [cy, cy], color='red', lw=3)
                 ax.text(0.1, cy+0.05, "Труба 80х80", color='red', fontsize=9, fontweight='bold')
-        ax.text(length/2, -0.3, "Синим: Сетка лаг. Голубым: Двойные лаги (усиление стыков). Красным: Балки", color='blue', ha='center')
+        ax.text(length/2, -0.3, "Синим: Сетка лаг | Голубым: Усиление стыков (Двойная лага) | Красным: Балки", color='blue', ha='center', fontsize=10)
 
     elif mode == "piles":
         for i in range(num_p_x):
@@ -262,7 +276,7 @@ def get_plot(mode):
     buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150); plt.close(fig); buf.seek(0)
     return buf
 
-# --- 5. ГЕНЕРАЦИЯ PDF ---
+# --- 6. ГЕНЕРАЦИЯ PDF ---
 def create_pdf():
     pdf = FPDF()
     try: pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True); pdf.set_font('DejaVu', '', 12)
@@ -283,12 +297,12 @@ def create_pdf():
     
     pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
 
-    for m, t in [("board", f"Схема настила: {pattern_choice}"), ("frame", "Схема каркаса (с двойными лагами)"), ("piles", "Свайное поле")]:
+    for m, t in [("board", f"Раскладка: {pattern_choice}"), ("frame", "Схема подсистемы (показаны двойные лаги)"), ("piles", "Свайное поле")]:
         if m == "piles" and piles == 0: continue
         pdf.add_page(); pdf.cell(200, 10, t, ln=True, align='C'); pdf.image(get_plot(m), x=15, y=30, w=180)
     return bytes(pdf.output())
 
-# --- 6. UI ---
+# --- 7. UI ---
 st.markdown(f"<h2 style='text-align: center; color: #1b5e20;'>Итоговая стоимость: {grand_total:,.0f} руб.</h2>", unsafe_allow_html=True)
 colA, colB = st.columns(2)
 with colA: st.markdown("#### 🪵 Смета материалов"); st.table(mat_data)
@@ -299,8 +313,8 @@ with col_dl2: st.download_button("📥 СКАЧАТЬ ПОЛНЫЙ ПРОЕКТ 
 st.divider()
 st.subheader("📐 Технические схемы (Размеры в мм)")
 t1, t2, t3 = st.tabs(["Вид настила", "Металлокаркас", "Свайное поле"])
-with t1: st.image(get_plot("board"), caption="Каждый стык доски математически выровнен строго по центрам лаг!")
-with t2: st.image(get_plot("frame"), caption="Голубые линии — это вторые (усиливающие) лаги, которые автоматически ставятся под каждый стык.")
+with t1: st.image(get_plot("board"), caption=f"Текущая раскладка: {pattern_choice}. Обрезки < 1/3 доски исключены!")
+with t2: st.image(get_plot("frame"), caption="Голубые линии — парные лаги. Они автоматически добавлены под каждый стык торцов доски.")
 with t3: 
     if piles > 0: st.image(get_plot("piles"))
     else: st.info("Основание — бетон, сваи не требуются.")
