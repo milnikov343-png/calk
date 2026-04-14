@@ -27,7 +27,6 @@ def load_google_sheet():
             width = int(row['Ширина (мм)'])
             length_m = float(row['Длина (м)'])
 
-            # Очищаем имя от длины, чтобы сгруппировать 3м и 4м в единую коллекцию
             base_name = re.sub(r'\d{4}[хx*]\d{2,3}[хx*]\d{2,3}', '', raw_name, flags=re.IGNORECASE)
             base_name = re.sub(r'\s*\d+(\.\d+)?\s*м\b', '', base_name, flags=re.IGNORECASE).replace('  ', ' ').strip()
             
@@ -50,6 +49,7 @@ def load_google_sheet():
 
 PARSED_BOARDS, PIPES_JOIST, PIPES_FRAME = load_google_sheet()
 
+# Константы
 METAL_MARGIN = 1.15
 GAP_MM = 5
 JOIST_STEP_M = 0.4
@@ -57,7 +57,6 @@ PILE_STEP_M = 2.0
 
 # --- 2. ИДЕАЛЬНЫЙ АЛГОРИТМ СИММЕТРИИ А-Б-А-Б ---
 def optimize_waste(pieces_list, collection_boards):
-    # Упаковка обрезков в целые хлысты
     boards_sorted = sorted(collection_boards, key=lambda x: x['length_m'])
     pieces_list = sorted(pieces_list, reverse=True)
     bins = []
@@ -82,21 +81,19 @@ def optimize_waste(pieces_list, collection_boards):
         summary[name]["sum"] += b['board']['board_cost']
     return summary
 
-def get_best_symmetric_layout(length, width, eff_w, collection_boards):
-    rows_count = math.ceil(width / eff_w)
+def get_best_symmetric_layout(target_len, target_width, eff_w, collection_boards):
+    rows_count = math.ceil(target_width / eff_w)
     best_cost = float('inf')
     best_layout = None
     best_joints = None
     best_summary = None
 
-    # Перебираем все доступные длины в коллекции (например, 3м и 4м)
-    # и смотрим, какая из них даст самый дешевый симметричный рисунок
     sorted_boards = sorted(collection_boards, key=lambda x: x['length_m'], reverse=True)
 
     for base_board in sorted_boards:
         M = base_board['length_m']
         min_allowed = M / 3.0
-        if min_allowed < 0.8: min_allowed = 0.8 # Защита: кусок не меньше 80 см
+        if min_allowed < 0.8: min_allowed = 0.8
 
         def fill_side(R):
             if R <= 0.01: return []
@@ -105,7 +102,6 @@ def get_best_symmetric_layout(length, width, eff_w, collection_boards):
             pieces = [M] * k
             
             if edge > 0.01:
-                # Если остаток меньше 1/3, сливаем его с целой доской и делим пополам
                 if edge < min_allowed and len(pieces) > 0:
                     last_M = pieces.pop()
                     combined = last_M + edge
@@ -114,21 +110,20 @@ def get_best_symmetric_layout(length, width, eff_w, collection_boards):
                     pieces.append(round(edge, 2))
             return pieces
 
-        # РЯД А (Шов по центру)
-        R_A = length / 2.0
+        # РЯД А
+        R_A = target_len / 2.0
         right_A = fill_side(R_A)
         row_A = right_A[::-1] + right_A
 
-        # РЯД Б (Целая доска по центру)
-        R_B = (length / 2.0) - (M / 2.0)
+        # РЯД Б
+        R_B = (target_len / 2.0) - (M / 2.0)
         if R_B <= 0.01:
-            if length <= M: row_B = [length]
-            else: row_B = [round(length/2, 2), round(length/2, 2)]
+            if target_len <= M: row_B = [target_len]
+            else: row_B = [round(target_len/2, 2), round(target_len/2, 2)]
         else:
             right_B = fill_side(R_B)
             row_B = right_B[::-1] + [M] + right_B
 
-        # Формируем матрицу всей террасы
         layout_matrix = []
         joints = set()
         for r in range(rows_count):
@@ -139,12 +134,10 @@ def get_best_symmetric_layout(length, width, eff_w, collection_boards):
                 cx = round(cx + p, 2)
                 joints.add(cx)
 
-        # Считаем обрезки и итоговую цену для этой длины доски
         flat_pieces = [p for row in layout_matrix for p in row]
         summary = optimize_waste(flat_pieces, collection_boards)
         total_cost = sum(d['sum'] for d in summary.values())
 
-        # Сохраняем, если этот вариант дешевле
         if total_cost < best_cost:
             best_cost = total_cost
             best_layout = layout_matrix
@@ -164,8 +157,8 @@ with col_h2:
 
 st.sidebar.header("1. Параметры объекта")
 client_name = st.sidebar.text_input("ФИО Клиента:", "Иван Иванович")
-length = st.sidebar.number_input("Длина (вдоль досок), м:", 1.0, 50.0, 9.0) # По умолчанию 9 метров!
-width = st.sidebar.number_input("Ширина террасы, м:", 1.0, 50.0, 4.0)
+length = st.sidebar.number_input("Длина фасада (Х), м:", 1.0, 50.0, 9.0)
+width = st.sidebar.number_input("Глубина террасы (Y), м:", 1.0, 50.0, 4.0)
 base_type = st.sidebar.radio("Основание:", ["Грунт (Сваи)", "Бетон"])
 
 st.sidebar.header("2. Выбор коллекции")
@@ -177,35 +170,57 @@ if PARSED_BOARDS[brand_choice]:
 else:
     st.stop()
 
+# НОВАЯ ФУНКЦИЯ: Направление укладки
+direction_choice = st.sidebar.radio("Направление настила:", ["Вдоль фасада (по длине X)", "Поперек фасада (по глубине Y)"])
+
 st.sidebar.header("3. Подсистема")
 joist_choice = st.sidebar.selectbox("Лаги (60х40):", list(PIPES_JOIST.keys()))
 frame_choice = st.sidebar.selectbox("Каркас (80х80):", list(PIPES_FRAME.keys())) if "Грунт" in base_type else None
 steps_m = st.sidebar.number_input("Ступени (пог.м):", 0.0, 50.0, 0.0)
 
-# --- 4. ОСНОВНЫЕ РАСЧЕТЫ ---
+# --- 4. ОСНОВНЫЕ РАСЧЕТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ---
 area = length * width
 
-# Идеальная симметричная раскладка
-layout_matrix, best_joints, board_totals = get_best_symmetric_layout(length, width, eff_w, collection_boards)
+# Логическая подмена осей в зависимости от направления
+if "Вдоль" in direction_choice:
+    board_len_axis = length
+    board_row_axis = width
+else:
+    board_len_axis = width
+    board_row_axis = length
 
-# Расчет подсистемы: добавляем 2 лаги под каждый шов
+layout_matrix, best_joints, board_totals = get_best_symmetric_layout(board_len_axis, board_row_axis, eff_w, collection_boards)
+
+# Расчет подсистемы
 extra_joists = len(best_joints) * 2 
-j_m = math.ceil((math.ceil(length / JOIST_STEP_M) + 1 + extra_joists) * width)
+joist_count_base = math.ceil(board_len_axis / JOIST_STEP_M) + 1
+joist_count_total = joist_count_base + extra_joists
+
+# Метраж лаг (лаги всегда перпендикулярны доскам)
+j_m = math.ceil(joist_count_total * board_row_axis)
 j_total = j_m * round(PIPES_JOIST[joist_choice] * METAL_MARGIN)
 
 piles = 0; f_m = 0; f_total = 0
+pr = math.ceil(length/PILE_STEP_M) + 1
+pc = math.ceil(width/PILE_STEP_M) + 1
+
 if "Грунт" in base_type:
-    pr = math.ceil(length/PILE_STEP_M) + 1; pc = math.ceil(width/PILE_STEP_M) + 1
     piles = pr * pc
-    f_m = math.ceil(pc * length)
+    # Каркас (80х80) перпендикулярен лагам
+    if "Вдоль" in direction_choice:
+        f_m = math.ceil(pc * length) # Каркас вдоль длины
+    else:
+        f_m = math.ceil(pr * width) # Каркас вдоль ширины
+        
     f_total = f_m * round(PIPES_FRAME[frame_choice] * METAL_MARGIN)
 
-clips_packs = math.ceil((width/eff_w * (math.ceil(length/JOIST_STEP_M) + extra_joists)) / 100)
+# Кляймеры (Количество рядов * количество пересечений с лагами)
+rows_count = math.ceil(board_row_axis / eff_w)
+clips_packs = math.ceil((rows_count * joist_count_total) / 100)
 clips_total = clips_packs * 2200
 
 work_base = area * 2400; work_steps = steps_m * 5200; work_piles = piles * 3600
 
-# Формирование таблиц
 mat_data = []
 for name, data in board_totals.items():
     mat_data.append({"Позиция": name, "Кол-во": f"{data['qty']} шт", "Сумма": data['sum']})
@@ -225,46 +240,61 @@ grand_total = sum(d['Сумма'] for d in mat_data) + sum(d['Сумма'] for d
 # --- 5. ЧЕРТЕЖИ ---
 def get_plot(mode):
     fig, ax = plt.subplots(figsize=(10, 6))
-    num_p_x = math.ceil(length/PILE_STEP_M) + 1; num_p_y = math.ceil(width/PILE_STEP_M) + 1
-    step_x = length / (num_p_x - 1) if num_p_x > 1 else length
-    step_y = width / (num_p_y - 1) if num_p_y > 1 else width
+    step_x = length / (pr - 1) if pr > 1 else length
+    step_y = width / (pc - 1) if pc > 1 else width
 
     if mode == "board":
-        for r, row_pieces in enumerate(layout_matrix):
-            y, x = r * eff_w, 0
-            for w in row_pieces:
-                ax.add_patch(patches.Rectangle((x, y), w, eff_w*0.8, color='#8d6e63', ec='black', lw=0.5))
-                x += w
-        ax.text(length/2, -0.4, f"Длина: {int(length*1000)} мм", ha='center', fontweight='bold', fontsize=10)
-        ax.text(-0.6, width/2, f"Ширина: {int(width*1000)} мм", va='center', rotation=90, fontweight='bold', fontsize=10)
+        if "Вдоль" in direction_choice:
+            for r, row_pieces in enumerate(layout_matrix):
+                y, x = r * eff_w, 0
+                for w in row_pieces:
+                    ax.add_patch(patches.Rectangle((x, y), w, eff_w*0.8, color='#8d6e63', ec='black', lw=0.5))
+                    x += w
+        else:
+            for r, row_pieces in enumerate(layout_matrix):
+                x, y = r * eff_w, 0
+                for w in row_pieces:
+                    ax.add_patch(patches.Rectangle((x, y), eff_w*0.8, w, color='#8d6e63', ec='black', lw=0.5))
+                    y += w
+                    
+        ax.text(length/2, -0.4, f"Длина фасада: {int(length*1000)} мм", ha='center', fontweight='bold', fontsize=10)
+        ax.text(-0.6, width/2, f"Глубина: {int(width*1000)} мм", va='center', rotation=90, fontweight='bold', fontsize=10)
 
     elif mode == "frame":
-        # Сетка лаг (синяя)
-        for i in range(math.ceil(length / JOIST_STEP_M) + 1): 
-            cx = min(i * JOIST_STEP_M, length); ax.plot([cx, cx], [0, width], color='blue', lw=1, alpha=0.3)
-            if i == 0:
-                ax.annotate('', xy=(JOIST_STEP_M, width*0.1), xytext=(0, width*0.1), arrowprops=dict(arrowstyle='<->', color='blue'))
-                ax.text(JOIST_STEP_M/2, width*0.12, f"{int(JOIST_STEP_M*1000)} мм", color='blue', ha='center', fontsize=9)
-        
-        # Двойные лаги (голубые)
-        for jx in best_joints:
-            ax.plot([jx-0.02, jx-0.02], [0, width], color='c', lw=1.5, alpha=0.9)
-            ax.plot([jx+0.02, jx+0.02], [0, width], color='c', lw=1.5, alpha=0.9)
-            
-        # Несущие балки (красные)
-        if frame_choice:
-            for j in range(num_p_y):
-                cy = j * step_y; ax.plot([0, length], [cy, cy], color='red', lw=3)
-                ax.text(0.1, cy+0.05, "Труба 80х80", color='red', fontsize=9, fontweight='bold')
-        ax.text(length/2, -0.3, "Синим: Сетка лаг | Голубым: Парные лаги (по 2шт на стык) | Красным: Балки", color='blue', ha='center', fontsize=10)
+        if "Вдоль" in direction_choice:
+            # Лаги вертикальные
+            for i in range(joist_count_base): 
+                cx = min(i * JOIST_STEP_M, length); ax.plot([cx, cx], [0, width], color='blue', lw=1, alpha=0.3)
+                if i == 0: ax.text(JOIST_STEP_M/2, width*0.12, f"{int(JOIST_STEP_M*1000)} мм", color='blue', ha='center', fontsize=9)
+            for jx in best_joints:
+                ax.plot([jx-0.02, jx-0.02], [0, width], color='c', lw=1.5, alpha=0.9)
+                ax.plot([jx+0.02, jx+0.02], [0, width], color='c', lw=1.5, alpha=0.9)
+            if frame_choice:
+                for j in range(pc):
+                    cy = j * step_y; ax.plot([0, length], [cy, cy], color='red', lw=3)
+                    ax.text(0.1, cy+0.05, "Труба 80х80", color='red', fontsize=9, fontweight='bold')
+        else:
+            # Лаги горизонтальные
+            for i in range(joist_count_base): 
+                cy = min(i * JOIST_STEP_M, width); ax.plot([0, length], [cy, cy], color='blue', lw=1, alpha=0.3)
+                if i == 0: ax.text(length*0.12, JOIST_STEP_M/2, f"{int(JOIST_STEP_M*1000)} мм", color='blue', va='center', fontsize=9)
+            for jy in best_joints:
+                ax.plot([0, length], [jy-0.02, jy-0.02], color='c', lw=1.5, alpha=0.9)
+                ax.plot([0, length], [jy+0.02, jy+0.02], color='c', lw=1.5, alpha=0.9)
+            if frame_choice:
+                for i in range(pr):
+                    cx = i * step_x; ax.plot([cx, cx], [0, width], color='red', lw=3)
+                    ax.text(cx+0.05, 0.1, "Труба 80х80", color='red', fontsize=9, fontweight='bold', rotation=90)
+                    
+        ax.text(length/2, -0.3, "Синим: Сетка лаг | Голубым: Парные лаги | Красным: Несущие балки", color='blue', ha='center', fontsize=10)
 
     elif mode == "piles":
-        for i in range(num_p_x):
-            for j in range(num_p_y):
+        for i in range(pr):
+            for j in range(pc):
                 px, py = i * step_x, j * step_y
                 ax.add_patch(patches.Circle((px, py), 0.15, color='black'))
-                if i < num_p_x - 1 and j == 0: ax.text(px + step_x/2, py-0.4, f"{int(step_x*1000)} мм", ha='center', fontsize=9)
-                if j < num_p_y - 1 and i == 0: ax.text(px-0.8, py + step_y/2, f"{int(step_y*1000)} мм", va='center', rotation=90, fontsize=9)
+                if i < pr - 1 and j == 0: ax.text(px + step_x/2, py-0.4, f"{int(step_x*1000)} мм", ha='center', fontsize=9)
+                if j < pc - 1 and i == 0: ax.text(px-0.8, py + step_y/2, f"{int(step_y*1000)} мм", va='center', rotation=90, fontsize=9)
 
     ax.set_xlim(-1.0, length+1.0); ax.set_ylim(-1.2, width+0.5); ax.set_aspect('equal'); plt.axis('off')
     buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150); plt.close(fig); buf.seek(0)
@@ -291,7 +321,7 @@ def create_pdf():
     
     pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
 
-    for m, t in [("board", "Монтажная схема: Строгая симметрия (А-Б-А-Б)"), ("frame", "Схема подсистемы (показаны парные лаги на стыках)"), ("piles", "Свайное поле")]:
+    for m, t in [("board", f"Настил: Симметрия (А-Б-А-Б), {direction_choice}"), ("frame", "Схема подсистемы (показаны парные лаги)"), ("piles", "Свайное поле")]:
         if m == "piles" and piles == 0: continue
         pdf.add_page(); pdf.cell(200, 10, t, ln=True, align='C'); pdf.image(get_plot(m), x=15, y=30, w=180)
     return bytes(pdf.output())
@@ -307,8 +337,8 @@ with col_dl2: st.download_button("📥 СКАЧАТЬ ПОЛНЫЙ ПРОЕКТ 
 st.divider()
 st.subheader("📐 Технические схемы (Размеры в мм)")
 t1, t2, t3 = st.tabs(["Вид настила", "Металлокаркас", "Свайное поле"])
-with t1: st.image(get_plot("board"), caption="Строгая симметрия. Ряд А и Ряд Б чередуются. Края равны. Нет обрезков < 1/3 доски.")
-with t2: st.image(get_plot("frame"), caption="Голубые линии — парные лаги. Каждая доска опирается на свою собственную лагу.")
+with t1: st.image(get_plot("board"), caption="Строгая симметрия без огрызков. Все торцы опираются на лаги.")
+with t2: st.image(get_plot("frame"), caption="Голубые линии — парные лаги под каждый стык.")
 with t3: 
     if piles > 0: st.image(get_plot("piles"))
     else: st.info("Основание — бетон, сваи не требуются.")
