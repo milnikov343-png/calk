@@ -56,56 +56,97 @@ GAP_MM = 5
 JOIST_STEP_M = 0.4
 PILE_STEP_M = 2.0
 
-# --- 2. ИДЕАЛЬНАЯ СИММЕТРИЧНАЯ РАСКЛАДКА ---
-def generate_symmetric_layout(length, width, eff_w, step, collection_boards):
+# --- 2. ИДЕАЛЬНАЯ СИММЕТРИЧНАЯ РАСКЛАДКА С ЗАЩИТОЙ ОТ ОБРЕЗКОВ ---
+def generate_rhythmic_layout(length, width, eff_w, step, collection_boards):
     rows_count = math.ceil(width / eff_w)
     layout = []
     joint_xs = set()
     
-    # Берем самую длинную доску в коллекции за основу
-    collection_boards = sorted(collection_boards, key=lambda x: x['length_m'], reverse=True)
-    main_len = collection_boards[0]['length_m']
-    
-    # Выравниваем длину доски и ее половину строго по лагам (шаг 400 мм)
+    # Берем самую длинную доску в коллекции
+    main_len = max([b['length_m'] for b in collection_boards])
     eff_main = math.floor(main_len / step) * step
-    if eff_main == 0: eff_main = step
+    if eff_main <= 0: eff_main = step
     
-    half_shift = math.floor((eff_main / 2) / step) * step
-    if half_shift == 0: half_shift = step
+    # Минимально допустимый кусок доски (1/3) с привязкой к лаге
+    min_allowed = math.ceil((eff_main / 3) / step) * step
+    if min_allowed < step * 2: min_allowed = step * 2 # Минимум 800мм (опора на 3 лаги)
+    
+    def fill_side(side_len, reverse=False):
+        if side_len <= 0.01: return []
+        pieces = []
+        rem = side_len
+        while rem > 0.01:
+            nxt = min(eff_main, rem)
+            nxt = round(math.floor(nxt / step) * step, 2)
+            if nxt <= 0: nxt = step
+            if nxt > rem: nxt = rem
+            pieces.append(nxt)
+            rem = round(rem - nxt, 2)
+            
+        # Умная защита от огрызков (Если крайний кусок меньше 1/3)
+        if len(pieces) > 1 and pieces[-1] < min_allowed:
+            deficit = math.ceil((min_allowed - pieces[-1]) / step) * step
+            # Если можем занять у соседней доски
+            if pieces[-2] - deficit >= min_allowed:
+                pieces[-2] = round(pieces[-2] - deficit, 2)
+                pieces[-1] = round(pieces[-1] + deficit, 2)
+            else:
+                # Если соседняя слишком мала, объединяем их в одну доску
+                pieces[-2] = round(pieces[-2] + pieces[-1], 2)
+                pieces.pop()
+        
+        if reverse: pieces.reverse()
+        return pieces
 
     for r in range(rows_count):
-        pieces = []
-        cx = 0
-        
-        # Четные ряды начинаются с целой доски, нечетные - с половинки
-        first_len = eff_main if r % 2 == 0 else half_shift
-        
-        # Кладем первую доску
-        if cx + first_len >= length:
-            pieces.append(round(length - cx, 2))
-            cx = length
+        if r % 2 == 0:
+            # РЯД А: Стык строго по центру террасы
+            center_joint = round((length / 2) / step) * step
+            left_pieces = fill_side(center_joint, reverse=True)
+            right_pieces = fill_side(round(length - center_joint, 2), reverse=False)
+            row_pieces = left_pieces + right_pieces
         else:
-            pieces.append(round(first_len, 2))
-            cx += first_len
-            joint_xs.add(round(cx, 2))
+            # РЯД Б: Целая доска по центру террасы
+            left_joint = round(((length / 2) - (eff_main / 2)) / step) * step
+            if left_joint < 0: left_joint = 0
+            center_board = eff_main if left_joint + eff_main <= length else round(length - left_joint, 2)
             
-        # Заполняем остаток ряда целыми досками
-        while cx < length:
-            nxt = eff_main
-            if cx + nxt >= length:
-                pieces.append(round(length - cx, 2))
-                cx = length
-            else:
-                pieces.append(round(nxt, 2))
-                cx += nxt
-                joint_xs.add(round(cx, 2))
-                
-        layout.append(pieces)
+            left_pieces = fill_side(left_joint, reverse=True)
+            right_pieces = fill_side(round(length - left_joint - center_board, 2), reverse=False)
+            row_pieces = left_pieces + [center_board] + right_pieces
+            
+            # Финальная чистка краев для ряда Б
+            if len(row_pieces) > 1 and row_pieces[0] < min_allowed:
+                deficit = math.ceil((min_allowed - row_pieces[0]) / step) * step
+                if row_pieces[1] - deficit >= min_allowed:
+                    row_pieces[1] = round(row_pieces[1] - deficit, 2)
+                    row_pieces[0] = round(row_pieces[0] + deficit, 2)
+                else:
+                    row_pieces[1] = round(row_pieces[1] + row_pieces[0], 2)
+                    row_pieces.pop(0)
+
+            if len(row_pieces) > 1 and row_pieces[-1] < min_allowed:
+                deficit = math.ceil((min_allowed - row_pieces[-1]) / step) * step
+                if row_pieces[-2] - deficit >= min_allowed:
+                    row_pieces[-2] = round(row_pieces[-2] - deficit, 2)
+                    row_pieces[-1] = round(row_pieces[-1] + deficit, 2)
+                else:
+                    row_pieces[-2] = round(row_pieces[-2] + row_pieces[-1], 2)
+                    row_pieces.pop()
+                    
+        row_pieces = [p for p in row_pieces if p > 0.01]
+        layout.append(row_pieces)
+        
+        # Сохраняем координаты стыков для двойных лаг
+        cx = 0
+        for p in row_pieces[:-1]:
+            cx = round(cx + p, 2)
+            joint_xs.add(cx)
             
     return layout, joint_xs
 
 def optimize_waste(pieces_list, collection_boards):
-    # Виртуально укладываем обрезки в целые хлысты для минимизации стоимости
+    # Упаковка обрезков в целые хлысты (First-Fit)
     boards_sorted = sorted(collection_boards, key=lambda x: x['length_m'])
     pieces_list = sorted(pieces_list, reverse=True)
     bins = []
@@ -162,15 +203,15 @@ steps_m = st.sidebar.number_input("Ступени (пог.м):", 0.0, 50.0, 0.0)
 # --- 4. ОСНОВНЫЕ РАСЧЕТЫ ---
 area = length * width
 
-# Генерация СИММЕТРИЧНОГО настила и стыков
-layout_matrix, joint_xs = generate_symmetric_layout(length, width, eff_w, JOIST_STEP_M, collection_boards)
+# Идеальная симметричная раскладка без огрызков
+layout_matrix, joint_xs = generate_rhythmic_layout(length, width, eff_w, JOIST_STEP_M, collection_boards)
 
-# Сбор и упаковка обрезков в целые доски
+# Оптимизация обрезков
 flat_pieces = [p for row in layout_matrix for p in row]
 board_totals = optimize_waste(flat_pieces, collection_boards)
 
-# Расчет подсистемы с учетом ДВОЙНЫХ ЛАГ
-extra_joists = len(joint_xs) # Каждому стыку по дополнительной лаге
+# Расчет подсистемы: добавляем лаги строго под стыки
+extra_joists = len(joint_xs) 
 j_m = math.ceil((math.ceil(length / JOIST_STEP_M) + 1 + extra_joists) * width)
 j_total = j_m * round(PIPES_JOIST[joist_choice] * METAL_MARGIN)
 
@@ -192,7 +233,7 @@ for name, data in board_totals.items():
     mat_data.append({"Позиция": name, "Кол-во": f"{data['qty']} шт", "Сумма": data['sum']})
 
 mat_data.extend([
-    {"Позиция": f"Лага {joist_choice} (с учетом усиления стыков)", "Кол-во": f"{j_m} м.п.", "Сумма": j_total},
+    {"Позиция": f"Лага {joist_choice} (с учетом парных лаг на стыках)", "Кол-во": f"{j_m} м.п.", "Сумма": j_total},
     {"Позиция": "Кляймеры (уп. 100 шт)", "Кол-во": f"{clips_packs} уп.", "Сумма": clips_total}
 ])
 if frame_choice: mat_data.insert(len(board_totals)+1, {"Позиция": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
@@ -237,7 +278,7 @@ def get_plot(mode):
             for j in range(num_p_y):
                 cy = j * step_y; ax.plot([0, length], [cy, cy], color='red', lw=3)
                 ax.text(0.1, cy+0.05, "Труба 80х80", color='red', fontsize=9, fontweight='bold')
-        ax.text(length/2, -0.3, "Синим: Сетка лаг | Голубым: Усиление стыков (Двойная лага) | Красным: Балки", color='blue', ha='center', fontsize=10)
+        ax.text(length/2, -0.3, "Синим: Сетка лаг | Голубым: Двойные лаги на стыках | Красным: Балки", color='blue', ha='center', fontsize=10)
 
     elif mode == "piles":
         for i in range(num_p_x):
@@ -272,7 +313,7 @@ def create_pdf():
     
     pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
 
-    for m, t in [("board", "Монтажная схема: Симметричная раскладка"), ("frame", "Схема подсистемы (показаны двойные лаги)"), ("piles", "Свайное поле")]:
+    for m, t in [("board", "Монтажная схема: Строгая симметричная укладка"), ("frame", "Схема подсистемы (показаны парные лаги на стыках)"), ("piles", "Свайное поле")]:
         if m == "piles" and piles == 0: continue
         pdf.add_page(); pdf.cell(200, 10, t, ln=True, align='C'); pdf.image(get_plot(m), x=15, y=30, w=180)
     return bytes(pdf.output())
@@ -288,7 +329,7 @@ with col_dl2: st.download_button("📥 СКАЧАТЬ ПОЛНЫЙ ПРОЕКТ 
 st.divider()
 st.subheader("📐 Технические схемы (Размеры в мм)")
 t1, t2, t3 = st.tabs(["Вид настила", "Металлокаркас", "Свайное поле"])
-with t1: st.image(get_plot("board"), caption="Идеальная симметричная раскладка. Каждый стык опирается на центр лаги.")
+with t1: st.image(get_plot("board"), caption="Ритм А-Б-А-Б. Строгая симметрия от центра к краям. Обрезки < 1/3 доски исключены!")
 with t2: st.image(get_plot("frame"), caption="Голубые линии — парные лаги. Они автоматически добавлены под каждый стык торцов доски.")
 with t3: 
     if piles > 0: st.image(get_plot("piles"))
