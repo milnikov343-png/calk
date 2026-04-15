@@ -27,6 +27,7 @@ def load_google_sheet():
             width = int(row['Ширина (мм)'])
             length_m = float(row['Длина (м)'])
 
+            # Группируем разные длины в одну коллекцию
             base_name = re.sub(r'\d{4}[хx*]\d{2,3}[хx*]\d{2,3}', '', raw_name, flags=re.IGNORECASE)
             base_name = re.sub(r'\s*\d+(\.\d+)?\s*м\b', '', base_name, flags=re.IGNORECASE).replace('  ', ' ').strip()
             
@@ -49,38 +50,12 @@ def load_google_sheet():
 
 PARSED_BOARDS, PIPES_JOIST, PIPES_FRAME = load_google_sheet()
 
-# Константы
 METAL_MARGIN = 1.15
 GAP_MM = 5
 JOIST_STEP_M = 0.4
 PILE_STEP_M = 2.0
 
-# --- 2. ИДЕАЛЬНЫЙ АЛГОРИТМ СИММЕТРИИ А-Б-А-Б ---
-def optimize_waste(pieces_list, collection_boards):
-    boards_sorted = sorted(collection_boards, key=lambda x: x['length_m'])
-    pieces_list = sorted(pieces_list, reverse=True)
-    bins = []
-    
-    for p in pieces_list:
-        placed = False
-        bins.sort(key=lambda b: b['board']['length_m'] - b['used'])
-        for b in bins:
-            if round(b['board']['length_m'] - b['used'], 2) >= p:
-                b['used'] = round(b['used'] + p, 2)
-                placed = True
-                break
-        if not placed:
-            chosen = next((b for b in boards_sorted if b['length_m'] >= p), boards_sorted[-1])
-            bins.append({"board": chosen, "used": p})
-            
-    summary = {}
-    for b in bins:
-        name = b['board']['name']
-        if name not in summary: summary[name] = {"qty": 0, "sum": 0, "unit": b['board']['unit']}
-        summary[name]["qty"] += 1
-        summary[name]["sum"] += b['board']['board_cost']
-    return summary
-
+# --- 2. СТРОГИЙ ИНЖЕНЕРНЫЙ РАСКРОЙ ---
 def get_best_symmetric_layout(target_len, target_width, eff_w, collection_boards):
     rows_count = math.ceil(target_width / eff_w)
     best_cost = float('inf')
@@ -88,55 +63,85 @@ def get_best_symmetric_layout(target_len, target_width, eff_w, collection_boards
     best_joints = None
     best_summary = None
 
-    sorted_boards = sorted(collection_boards, key=lambda x: x['length_m'], reverse=True)
-
-    for base_board in sorted_boards:
+    # Перебираем каждую доступную длину доски отдельно (не смешивая их!)
+    for base_board in collection_boards:
         M = base_board['length_m']
-        min_allowed = M / 3.0
-        if min_allowed < 0.8: min_allowed = 0.8
+        # Доска должна опираться на лаги (шаг 0.4). Например, 3м режется до 2.8м
+        eff_M = math.floor(M / JOIST_STEP_M) * JOIST_STEP_M
+        if eff_M <= 0: continue
+        
+        min_allowed = max(0.8, eff_M / 3.0) # Защита от коротких обрезков
 
-        def fill_side(R):
-            if R <= 0.01: return []
-            k = int(round(R, 3) // M)
-            edge = round(R - k * M, 3)
-            pieces = [M] * k
-            
-            if edge > 0.01:
-                if edge < min_allowed and len(pieces) > 0:
-                    last_M = pieces.pop()
-                    combined = last_M + edge
-                    pieces.extend([round(combined / 2.0, 2), round(combined / 2.0, 2)])
-                else:
-                    pieces.append(round(edge, 2))
-            return pieces
-
-        # РЯД А
-        R_A = target_len / 2.0
-        right_A = fill_side(R_A)
-        row_A = right_A[::-1] + right_A
-
-        # РЯД Б
-        R_B = (target_len / 2.0) - (M / 2.0)
-        if R_B <= 0.01:
-            if target_len <= M: row_B = [target_len]
-            else: row_B = [round(target_len/2, 2), round(target_len/2, 2)]
+        # Если доска длиннее террасы - кладем целиком без швов!
+        if target_len <= eff_M:
+            row_A = [round(target_len, 2)]
+            row_B = [round(target_len, 2)]
         else:
-            right_B = fill_side(R_B)
-            row_B = right_B[::-1] + [M] + right_B
+            # Функция распила одного сегмента (с защитой от огрызков)
+            def fill_segment(L):
+                if L <= 0.01: return []
+                pieces = []
+                rem = L
+                while rem > eff_M + 0.01:
+                    pieces.append(eff_M)
+                    rem = round(rem - eff_M, 2)
+                if rem > 0.01:
+                    pieces.append(round(rem, 2))
+                
+                # Если последний кусок слишком мал - сливаем с предыдущим и делим
+                if len(pieces) > 1 and pieces[-1] < min_allowed:
+                    deficit = math.ceil((min_allowed - pieces[-1]) / JOIST_STEP_M) * JOIST_STEP_M
+                    if pieces[-2] - deficit >= min_allowed:
+                        pieces[-2] = round(pieces[-2] - deficit, 2)
+                        pieces[-1] = round(pieces[-1] + deficit, 2)
+                    else:
+                        combined = pieces[-2] + pieces[-1]
+                        half = math.floor((combined / 2) / JOIST_STEP_M) * JOIST_STEP_M
+                        if half <= 0: half = JOIST_STEP_M
+                        pieces[-2] = round(half, 2)
+                        pieces[-1] = round(combined - half, 2)
+                return pieces
 
+            # Ряд А (Шов строго по центру)
+            cx = math.floor((target_len / 2) / JOIST_STEP_M) * JOIST_STEP_M
+            row_A = fill_segment(cx) + fill_segment(round(target_len - cx, 2))
+            
+            # Ряд Б (Целая доска по центру)
+            left_x = math.floor(((target_len - eff_M) / 2) / JOIST_STEP_M) * JOIST_STEP_M
+            if left_x < 0: left_x = 0
+            right_x = left_x + eff_M
+            if right_x > target_len: right_x = target_len
+            row_B = fill_segment(left_x) + fill_segment(round(right_x - left_x, 2)) + fill_segment(round(target_len - right_x, 2))
+
+        # Формируем матрицу
         layout_matrix = []
         joints = set()
         for r in range(rows_count):
             current_row = row_A if r % 2 == 0 else row_B
             layout_matrix.append(current_row)
-            cx = 0
+            jx = 0
             for p in current_row[:-1]:
-                cx = round(cx + p, 2)
-                joints.add(cx)
+                jx = round(jx + p, 2)
+                joints.add(jx)
 
-        flat_pieces = [p for row in layout_matrix for p in row]
-        summary = optimize_waste(flat_pieces, collection_boards)
-        total_cost = sum(d['sum'] for d in summary.values())
+        # Оптимизация обрезков ТОЛЬКО ИЗ ВЫБРАННОЙ ДЛИНЫ (без солянки)
+        flat_pieces = sorted([p for row in layout_matrix for p in row], reverse=True)
+        bins = []
+        for p in flat_pieces:
+            placed = False
+            bins.sort(key=lambda b: M - b)
+            for i in range(len(bins)):
+                if round(M - bins[i], 2) >= p:
+                    bins[i] = round(bins[i] + p, 2)
+                    placed = True
+                    break
+            if not placed:
+                bins.append(p)
+                
+        qty = len(bins)
+        total_cost = qty * base_board['board_cost']
+        
+        summary = {base_board['name']: {"qty": qty, "sum": total_cost, "unit": base_board['unit']}}
 
         if total_cost < best_cost:
             best_cost = total_cost
@@ -157,8 +162,8 @@ with col_h2:
 
 st.sidebar.header("1. Параметры объекта")
 client_name = st.sidebar.text_input("ФИО Клиента:", "Иван Иванович")
-length = st.sidebar.number_input("Длина фасада (Х), м:", 1.0, 50.0, 9.0)
-width = st.sidebar.number_input("Глубина террасы (Y), м:", 1.0, 50.0, 4.0)
+length = st.sidebar.number_input("Длина фасада (X), м:", 1.0, 50.0, 9.0)
+width = st.sidebar.number_input("Глубина (Y), м:", 1.0, 50.0, 4.0)
 base_type = st.sidebar.radio("Основание:", ["Грунт (Сваи)", "Бетон"])
 
 st.sidebar.header("2. Выбор коллекции")
@@ -170,18 +175,16 @@ if PARSED_BOARDS[brand_choice]:
 else:
     st.stop()
 
-# НОВАЯ ФУНКЦИЯ: Направление укладки
-direction_choice = st.sidebar.radio("Направление настила:", ["Вдоль фасада (по длине X)", "Поперек фасада (по глубине Y)"])
+direction_choice = st.sidebar.radio("Направление укладки доски:", ["Вдоль фасада (по длине X)", "Поперек фасада (по глубине Y)"])
 
 st.sidebar.header("3. Подсистема")
 joist_choice = st.sidebar.selectbox("Лаги (60х40):", list(PIPES_JOIST.keys()))
 frame_choice = st.sidebar.selectbox("Каркас (80х80):", list(PIPES_FRAME.keys())) if "Грунт" in base_type else None
 steps_m = st.sidebar.number_input("Ступени (пог.м):", 0.0, 50.0, 0.0)
 
-# --- 4. ОСНОВНЫЕ РАСЧЕТЫ С УЧЕТОМ НАПРАВЛЕНИЯ ---
+# --- 4. ОСНОВНЫЕ РАСЧЕТЫ ---
 area = length * width
 
-# Логическая подмена осей в зависимости от направления
 if "Вдоль" in direction_choice:
     board_len_axis = length
     board_row_axis = width
@@ -189,6 +192,7 @@ else:
     board_len_axis = width
     board_row_axis = length
 
+# Гениальный расчет раскладки
 layout_matrix, best_joints, board_totals = get_best_symmetric_layout(board_len_axis, board_row_axis, eff_w, collection_boards)
 
 # Расчет подсистемы
@@ -196,7 +200,6 @@ extra_joists = len(best_joints) * 2
 joist_count_base = math.ceil(board_len_axis / JOIST_STEP_M) + 1
 joist_count_total = joist_count_base + extra_joists
 
-# Метраж лаг (лаги всегда перпендикулярны доскам)
 j_m = math.ceil(joist_count_total * board_row_axis)
 j_total = j_m * round(PIPES_JOIST[joist_choice] * METAL_MARGIN)
 
@@ -206,27 +209,23 @@ pc = math.ceil(width/PILE_STEP_M) + 1
 
 if "Грунт" in base_type:
     piles = pr * pc
-    # Каркас (80х80) перпендикулярен лагам
-    if "Вдоль" in direction_choice:
-        f_m = math.ceil(pc * length) # Каркас вдоль длины
-    else:
-        f_m = math.ceil(pr * width) # Каркас вдоль ширины
-        
+    if "Вдоль" in direction_choice: f_m = math.ceil(pc * length)
+    else: f_m = math.ceil(pr * width)
     f_total = f_m * round(PIPES_FRAME[frame_choice] * METAL_MARGIN)
 
-# Кляймеры (Количество рядов * количество пересечений с лагами)
 rows_count = math.ceil(board_row_axis / eff_w)
 clips_packs = math.ceil((rows_count * joist_count_total) / 100)
 clips_total = clips_packs * 2200
 
 work_base = area * 2400; work_steps = steps_m * 5200; work_piles = piles * 3600
 
+# Таблицы
 mat_data = []
 for name, data in board_totals.items():
     mat_data.append({"Позиция": name, "Кол-во": f"{data['qty']} шт", "Сумма": data['sum']})
 
 mat_data.extend([
-    {"Позиция": f"Лага {joist_choice} (вкл. двойные лаги на стыках)", "Кол-во": f"{j_m} м.п.", "Сумма": j_total},
+    {"Позиция": f"Лага {joist_choice} (вкл. парные лаги на стыках)", "Кол-во": f"{j_m} м.п.", "Сумма": j_total},
     {"Позиция": "Кляймеры (уп. 100 шт)", "Кол-во": f"{clips_packs} уп.", "Сумма": clips_total}
 ])
 if frame_choice: mat_data.insert(len(board_totals)+1, {"Позиция": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
@@ -262,7 +261,6 @@ def get_plot(mode):
 
     elif mode == "frame":
         if "Вдоль" in direction_choice:
-            # Лаги вертикальные
             for i in range(joist_count_base): 
                 cx = min(i * JOIST_STEP_M, length); ax.plot([cx, cx], [0, width], color='blue', lw=1, alpha=0.3)
                 if i == 0: ax.text(JOIST_STEP_M/2, width*0.12, f"{int(JOIST_STEP_M*1000)} мм", color='blue', ha='center', fontsize=9)
@@ -274,7 +272,6 @@ def get_plot(mode):
                     cy = j * step_y; ax.plot([0, length], [cy, cy], color='red', lw=3)
                     ax.text(0.1, cy+0.05, "Труба 80х80", color='red', fontsize=9, fontweight='bold')
         else:
-            # Лаги горизонтальные
             for i in range(joist_count_base): 
                 cy = min(i * JOIST_STEP_M, width); ax.plot([0, length], [cy, cy], color='blue', lw=1, alpha=0.3)
                 if i == 0: ax.text(length*0.12, JOIST_STEP_M/2, f"{int(JOIST_STEP_M*1000)} мм", color='blue', va='center', fontsize=9)
