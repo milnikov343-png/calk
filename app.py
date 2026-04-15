@@ -57,7 +57,7 @@ PILE_STEP_M = 2.0
 
 # --- 2. КЛАССИЧЕСКИЙ АЛГОРИТМ РАСКЛАДКИ В ПОЛДОСКИ ---
 def optimize_waste(pieces_list, allowed_board):
-    # Упаковка обрезков ТОЛЬКО в выбранную длину хлыста (чтобы не смешивать 3м и 4м)
+    # Упаковка обрезков ТОЛЬКО в выбранную длину хлыста
     pieces_list = sorted(pieces_list, reverse=True)
     bins = []
     
@@ -161,7 +161,8 @@ st.title("🏗️ Профессиональный проект террасы")
 col_h1, col_h2 = st.columns([8, 2])
 with col_h2:
     if st.button("🔄 Обновить прайс", use_container_width=True):
-        st.cache_data.clear(); st.rerun()
+        st.cache_data.clear()
+        st.rerun()
 
 st.sidebar.header("1. Параметры объекта")
 client_name = st.sidebar.text_input("ФИО Клиента:", "Иван Иванович")
@@ -249,4 +250,95 @@ def get_plot(mode):
             for r, row_pieces in enumerate(layout_matrix):
                 y, x = r * eff_w, 0
                 for w in row_pieces:
-                    ax.add_patch(patches.Rectangle((x, y), w, eff_w*0.8, color='#8d6e63', ec='black',
+                    ax.add_patch(patches.Rectangle((x, y), w, eff_w*0.8, color='#8d6e63', ec='black', lw=0.5))
+                    x += w
+        else:
+            for r, row_pieces in enumerate(layout_matrix):
+                x, y = r * eff_w, 0
+                for w in row_pieces:
+                    ax.add_patch(patches.Rectangle((x, y), eff_w*0.8, w, color='#8d6e63', ec='black', lw=0.5))
+                    y += w
+                    
+        ax.text(length/2, -0.4, f"Длина фасада: {int(length*1000)} мм", ha='center', fontweight='bold', fontsize=10)
+        ax.text(-0.6, width/2, f"Глубина: {int(width*1000)} мм", va='center', rotation=90, fontweight='bold', fontsize=10)
+
+    elif mode == "frame":
+        if "Вдоль" in direction_choice:
+            for i in range(joist_count_base): 
+                cx = min(i * JOIST_STEP_M, length); ax.plot([cx, cx], [0, width], color='blue', lw=1, alpha=0.3)
+                if i == 0: ax.text(JOIST_STEP_M/2, width*0.12, f"{int(JOIST_STEP_M*1000)} мм", color='blue', ha='center', fontsize=9)
+            for jx in best_joints:
+                ax.plot([jx-0.02, jx-0.02], [0, width], color='c', lw=1.5, alpha=0.9)
+                ax.plot([jx+0.02, jx+0.02], [0, width], color='c', lw=1.5, alpha=0.9)
+            if frame_choice:
+                for j in range(pc):
+                    cy = j * step_y; ax.plot([0, length], [cy, cy], color='red', lw=3)
+                    ax.text(0.1, cy+0.05, "Труба 80х80", color='red', fontsize=9, fontweight='bold')
+        else:
+            for i in range(joist_count_base): 
+                cy = min(i * JOIST_STEP_M, width); ax.plot([0, length], [cy, cy], color='blue', lw=1, alpha=0.3)
+                if i == 0: ax.text(length*0.12, JOIST_STEP_M/2, f"{int(JOIST_STEP_M*1000)} мм", color='blue', va='center', fontsize=9)
+            for jy in best_joints:
+                ax.plot([0, length], [jy-0.02, jy-0.02], color='c', lw=1.5, alpha=0.9)
+                ax.plot([0, length], [jy+0.02, jy+0.02], color='c', lw=1.5, alpha=0.9)
+            if frame_choice:
+                for i in range(pr):
+                    cx = i * step_x; ax.plot([cx, cx], [0, width], color='red', lw=3)
+                    ax.text(cx+0.05, 0.1, "Труба 80х80", color='red', fontsize=9, fontweight='bold', rotation=90)
+                    
+        ax.text(length/2, -0.3, "Синим: Сетка лаг | Голубым: Парные лаги | Красным: Несущие балки", color='blue', ha='center', fontsize=10)
+
+    elif mode == "piles":
+        for i in range(pr):
+            for j in range(pc):
+                px, py = i * step_x, j * step_y
+                ax.add_patch(patches.Circle((px, py), 0.15, color='black'))
+                if i < pr - 1 and j == 0: ax.text(px + step_x/2, py-0.4, f"{int(step_x*1000)} мм", ha='center', fontsize=9)
+                if j < pc - 1 and i == 0: ax.text(px-0.8, py + step_y/2, f"{int(step_y*1000)} мм", va='center', rotation=90, fontsize=9)
+
+    ax.set_xlim(-1.0, length+1.0); ax.set_ylim(-1.2, width+0.5); ax.set_aspect('equal'); plt.axis('off')
+    buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150); plt.close(fig); buf.seek(0)
+    return buf
+
+# --- 6. ГЕНЕРАЦИЯ PDF ---
+def create_pdf():
+    pdf = FPDF()
+    try: pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True); pdf.set_font('DejaVu', '', 12)
+    except: pdf.set_font('Arial', '', 12)
+    
+    pdf.add_page(); pdf.cell(200, 10, txt="Смета и чертежи на устройство террасы", ln=True, align='C')
+    pdf.cell(200, 10, txt=f"Клиент: {client_name} | Габариты: {int(length*1000)}x{int(width*1000)} мм", ln=True, align='L'); pdf.ln(5)
+    
+    pdf.set_fill_color(235, 235, 235)
+    pdf.cell(110, 10, "Материалы", 1, 0, 'L', True); pdf.cell(30, 10, "Кол-во", 1, 0, 'C', True); pdf.cell(50, 10, "Сумма", 1, 1, 'C', True)
+    for r in mat_data:
+        short_name = str(r["Позиция"])[:45] + "..." if len(str(r["Позиция"])) > 45 else str(r["Позиция"])
+        pdf.cell(110, 10, short_name, 1); pdf.cell(30, 10, str(r["Кол-во"]), 1, 0, 'C'); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.", 1, 1, 'R')
+        
+    pdf.ln(5); pdf.cell(140, 10, "Строительно-монтажные работы", 1, 0, 'L', True); pdf.cell(50, 10, "Сумма", 1, 1, 'C', True)
+    for r in work_data:
+        pdf.cell(140, 10, str(r["Позиция"]), 1); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.", 1, 1, 'R')
+    
+    pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
+
+    for m, t in [("board", f"Настил: Классика (в полдоски), {direction_choice}"), ("frame", "Схема подсистемы (показаны парные лаги)"), ("piles", "Свайное поле")]:
+        if m == "piles" and piles == 0: continue
+        pdf.add_page(); pdf.cell(200, 10, t, ln=True, align='C'); pdf.image(get_plot(m), x=15, y=30, w=180)
+    return bytes(pdf.output())
+
+# --- 7. UI ---
+st.markdown(f"<h2 style='text-align: center; color: #1b5e20;'>Итоговая стоимость: {grand_total:,.0f} руб.</h2>", unsafe_allow_html=True)
+colA, colB = st.columns(2)
+with colA: st.markdown("#### 🪵 Смета материалов"); st.table(mat_data)
+with colB: st.markdown("#### ⚒️ Смета работ"); st.table(work_data)
+st.divider()
+col_dl1, col_dl2, col_dl3 = st.columns([1, 2, 1])
+with col_dl2: st.download_button("📥 СКАЧАТЬ ПОЛНЫЙ ПРОЕКТ (PDF)", data=create_pdf(), file_name=f"Terrasa_{client_name}.pdf", mime="application/pdf", use_container_width=True)
+st.divider()
+st.subheader("📐 Технические схемы (Размеры в мм)")
+t1, t2, t3 = st.tabs(["Вид настила", "Металлокаркас", "Свайное поле"])
+with t1: st.image(get_plot("board"), caption="Укладка в полдоски от края. Доски в ряду не смешиваются.")
+with t2: st.image(get_plot("frame"), caption="Голубые линии — парные лаги под каждый стык.")
+with t3: 
+    if piles > 0: st.image(get_plot("piles"))
+    else: st.info("Основание — бетон, сваи не требуются.")
