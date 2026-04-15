@@ -27,7 +27,7 @@ def load_google_sheet():
             width = int(row['Ширина (мм)'])
             length_m = float(row['Длина (м)'])
 
-            # Очищаем имя от длины, чтобы сгруппировать разные хлысты в одну коллекцию
+            # Группируем длины в коллекции
             base_name = re.sub(r'\d{4}[хx*]\d{2,3}[хx*]\d{2,3}', '', raw_name, flags=re.IGNORECASE)
             base_name = re.sub(r'\s*\d+(\.\d+)?\s*м\b', '', base_name, flags=re.IGNORECASE).replace('  ', ' ').strip()
             
@@ -55,9 +55,9 @@ GAP_MM = 5
 JOIST_STEP_M = 0.4
 PILE_STEP_M = 2.0
 
-# --- 2. КЛАССИЧЕСКИЙ АЛГОРИТМ РАСКЛАДКИ В ПОЛДОСКИ ---
+# --- 2. ИДЕАЛЬНАЯ СИММЕТРИЧНАЯ РАСКЛАДКА (ОТ ЦЕНТРА К КРАЯМ) ---
 def optimize_waste(pieces_list, allowed_board):
-    # Упаковка обрезков ТОЛЬКО в выбранную длину хлыста
+    # Складываем все обрезки только в доски выбранной длины
     pieces_list = sorted(pieces_list, reverse=True)
     bins = []
     
@@ -76,58 +76,63 @@ def optimize_waste(pieces_list, allowed_board):
     sum_cost = qty * allowed_board['board_cost']
     return {allowed_board['name']: {"qty": qty, "sum": sum_cost, "unit": allowed_board['unit']}}
 
-def get_best_offset_layout(target_len, target_width, eff_w, collection_boards):
+def get_best_symmetric_layout(target_len, target_width, eff_w, collection_boards):
     rows_count = math.ceil(target_width / eff_w)
     best_cost = float('inf')
     best_layout = None
     best_joints = None
     best_summary = None
 
-    # Проверяем каждую длину в коллекции отдельно
+    # Перебираем каждую длину отдельно
     for base_board in collection_boards:
         M = base_board['length_m']
-        min_allowed = 0.8 # Запрет на куски меньше 80 см
+        min_allowed = 0.8 # Запрещаем края меньше 80 см
 
-        # Если доска длиннее террасы - кладем целиком без единого шва!
         if target_len <= M:
             row_A = [round(target_len, 2)]
             row_B = [round(target_len, 2)]
         else:
-            # Функция сборки ряда
-            def make_row(first_piece_len):
-                pieces = []
-                rem = target_len
+            # РЯД А: Шов ровно по центру террасы
+            half_L = target_len / 2.0
+            num_M = int(half_L // M)
+            edge = half_L - num_M * M
+            
+            half_row_A = []
+            if edge > 0.01: half_row_A.append(edge)
+            half_row_A.extend([M] * num_M)
+            
+            # Защита от огрызков (если край получился меньше 80 см)
+            if len(half_row_A) > 1 and half_row_A[0] < min_allowed:
+                combined = half_row_A[0] + half_row_A[1]
+                half_row_A[0] = combined / 2.0
+                half_row_A[1] = combined / 2.0
                 
-                # Кладем первый кусок
-                p1 = min(first_piece_len, rem)
-                pieces.append(p1)
-                rem = round(rem - p1, 2)
-                
-                # Заполняем середину целыми
-                while rem > M + 0.01:
-                    pieces.append(M)
-                    rem = round(rem - M, 2)
-                    
-                # Докидываем остаток
-                if rem > 0.01:
-                    pieces.append(rem)
-                    
-                # ЗАЩИТА: Если последний огрызок слишком мал
-                if len(pieces) > 1 and pieces[-1] < min_allowed:
-                    deficit = min_allowed - pieces[-1]
-                    if pieces[0] - deficit >= min_allowed:
-                        pieces[0] = round(pieces[0] - deficit, 2)
-                        pieces[-1] = round(pieces[-1] + deficit, 2)
-                    else:
-                        combined = pieces[-2] + pieces[-1]
-                        pieces[-2] = round(combined / 2, 2)
-                        pieces[-1] = round(combined - pieces[-2], 2)
-                return pieces
+            row_A = [round(x, 2) for x in half_row_A + half_row_A[::-1]]
 
-            # Ряд А (начинаем с целой)
-            row_A = make_row(M)
-            # Ряд Б (начинаем с половинки)
-            row_B = make_row(M / 2.0)
+            # РЯД Б: Целая доска ровно по центру террасы
+            half_rem = (target_len - M) / 2.0
+            if half_rem <= 0.01:
+                row_B = [round(target_len / 2.0, 2), round(target_len / 2.0, 2)]
+            else:
+                num_M = int(half_rem // M)
+                edge = half_rem - num_M * M
+                
+                half_row_B = []
+                if edge > 0.01: half_row_B.append(edge)
+                half_row_B.extend([M] * num_M)
+                
+                if len(half_row_B) > 1 and half_row_B[0] < min_allowed:
+                    combined = half_row_B[0] + half_row_B[1]
+                    half_row_B[0] = combined / 2.0
+                    half_row_B[1] = combined / 2.0
+                elif len(half_row_B) == 1 and half_row_B[0] < min_allowed:
+                    # Редкий случай: делим террасу на 3 равных куска
+                    if target_len / 3.0 <= M:
+                        row_B = [round(target_len/3.0, 2)] * 3
+                        half_row_B = None 
+                
+                if half_row_B is not None:
+                    row_B = [round(x, 2) for x in half_row_B + [M] + half_row_B[::-1]]
 
         # Собираем матрицу
         layout_matrix = []
@@ -140,12 +145,11 @@ def get_best_offset_layout(target_len, target_width, eff_w, collection_boards):
                 jx = round(jx + p, 2)
                 joints.add(jx)
 
-        # Считаем смету ТОЛЬКО для этой длины доски
+        # Считаем смету для данной длины доски
         flat_pieces = [p for row in layout_matrix for p in row]
         summary = optimize_waste(flat_pieces, base_board)
         total_cost = sum(d['sum'] for d in summary.values())
 
-        # Ищем самый выгодный вариант
         if total_cost < best_cost:
             best_cost = total_cost
             best_layout = layout_matrix
@@ -161,12 +165,11 @@ st.title("🏗️ Профессиональный проект террасы")
 col_h1, col_h2 = st.columns([8, 2])
 with col_h2:
     if st.button("🔄 Обновить прайс", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+        st.cache_data.clear(); st.rerun()
 
 st.sidebar.header("1. Параметры объекта")
 client_name = st.sidebar.text_input("ФИО Клиента:", "Иван Иванович")
-length = st.sidebar.number_input("Длина фасада (X), м:", 1.0, 50.0, 9.0)
+length = st.sidebar.number_input("Длина фасада (X), м:", 1.0, 50.0, 7.0)
 width = st.sidebar.number_input("Глубина (Y), м:", 1.0, 50.0, 4.0)
 base_type = st.sidebar.radio("Основание:", ["Грунт (Сваи)", "Бетон"])
 
@@ -196,7 +199,7 @@ else:
     board_len_axis = width
     board_row_axis = length
 
-layout_matrix, best_joints, board_totals = get_best_offset_layout(board_len_axis, board_row_axis, eff_w, collection_boards)
+layout_matrix, best_joints, board_totals = get_best_symmetric_layout(board_len_axis, board_row_axis, eff_w, collection_boards)
 
 # Подсистема: двойные лаги на каждый шов
 extra_joists = len(best_joints) * 2 
@@ -321,7 +324,7 @@ def create_pdf():
     
     pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
 
-    for m, t in [("board", f"Настил: Классика (в полдоски), {direction_choice}"), ("frame", "Схема подсистемы (показаны парные лаги)"), ("piles", "Свайное поле")]:
+    for m, t in [("board", f"Настил: Симметрия от центра, {direction_choice}"), ("frame", "Схема подсистемы (показаны парные лаги)"), ("piles", "Свайное поле")]:
         if m == "piles" and piles == 0: continue
         pdf.add_page(); pdf.cell(200, 10, t, ln=True, align='C'); pdf.image(get_plot(m), x=15, y=30, w=180)
     return bytes(pdf.output())
@@ -337,7 +340,7 @@ with col_dl2: st.download_button("📥 СКАЧАТЬ ПОЛНЫЙ ПРОЕКТ 
 st.divider()
 st.subheader("📐 Технические схемы (Размеры в мм)")
 t1, t2, t3 = st.tabs(["Вид настила", "Металлокаркас", "Свайное поле"])
-with t1: st.image(get_plot("board"), caption="Укладка в полдоски от края. Доски в ряду не смешиваются.")
+with t1: st.image(get_plot("board"), caption="Строгая симметрия. Ряды А и Б. Нет обрезков менее 80 см.")
 with t2: st.image(get_plot("frame"), caption="Голубые линии — парные лаги под каждый стык.")
 with t3: 
     if piles > 0: st.image(get_plot("piles"))
