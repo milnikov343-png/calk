@@ -249,7 +249,7 @@ elif shape_type == "📐 Г-образная (Угловая)":
     cut_y = col2.number_input("Вырез Y, м:", 0.1, float(width-0.1), 2.0)
 
 elif shape_type == "🔲 П-образная (С вырезом)":
-    st.sidebar.caption("Задайте общие габариты и центра вырез:")
+    st.sidebar.caption("Задайте общие габариты и центральный вырез:")
     length = st.sidebar.number_input("Общая длина X, м:", 1.0, 50.0, 8.0)
     width = st.sidebar.number_input("Общая глубина Y, м:", 1.0, 50.0, 5.0)
     col1, col2 = st.sidebar.columns(2)
@@ -301,10 +301,9 @@ else:
 direction_choice = st.sidebar.radio("Направление укладки основной доски:", ["Вдоль фасада (по длине X)", "Поперек фасада (по глубине Y)"])
 
 st.sidebar.header("5. Окантовка (Торцевая доска)")
-edge_front = st.sidebar.checkbox("Спереди (вдоль X)", value=True)
-edge_back = st.sidebar.checkbox("Сзади у стены (вдоль X)", value=False)
-edge_left = st.sidebar.checkbox("Слева (вдоль Y)", value=True)
-edge_right = st.sidebar.checkbox("Справа (вдоль Y)", value=True)
+use_frame = st.sidebar.checkbox("Сделать окантовку по периметру (Picture Frame)", value=True)
+edge_front = True; edge_back = True; edge_left = True; edge_right = True
+if not use_frame: edge_front = edge_back = edge_left = edge_right = False
 
 st.sidebar.header("6. Подсистема")
 joist_choice = st.sidebar.selectbox("Лаги (60х40):", list(PIPES_JOIST.keys()))
@@ -316,7 +315,7 @@ is_complex = (shape_type != "⬜ Прямоугольная (Стандарт)")
 
 if is_complex:
     st.warning("Интерфейс для сложных форм и бассейнов активирован.")
-    st.info("💡 Модуль математического вырезания фигур временно отключен для отладки интерфейса ввода размеров.\n\nПожалуйста, переключитесь на «Прямоугольную (Стандарт)» и уберите галочку бассейна, чтобы увидеть расчёты.")
+    st.info("💡 Модуль математического вырезания фигур отключен, чтобы не мешать стабильной работе прямоугольного калькулятора.\n\nПожалуйста, переключитесь на «Прямоугольную (Стандарт)» и уберите галочку бассейна, чтобы увидеть расчёты.")
     st.stop()
 
 # --- 4. РАСЧЕТЫ ДЛЯ ПРЯМОУГОЛЬНОЙ ТЕРРАСЫ ---
@@ -331,15 +330,10 @@ inner_X = round(length - offset_left - offset_right, 3)
 inner_Y = round(width - offset_front - offset_back, 3)
 
 if inner_X <= 0 or inner_Y <= 0:
-    st.error("Размеры террасы слишком малы для установки торцевой доски со всех сторон.")
-    st.stop()
+    st.error("Терраса слишком мала."); st.stop()
 
-if "Вдоль" in direction_choice:
-    board_len_axis = inner_X
-    board_row_axis = inner_Y
-else:
-    board_len_axis = inner_Y
-    board_row_axis = inner_X
+board_len_axis = inner_X if "Вдоль" in direction_choice else inner_Y
+board_row_axis = inner_Y if "Вдоль" in direction_choice else inner_X
 
 # Раскладка основной доски (ИДЕАЛЬНАЯ А-Б-А-Б)
 layout_matrix, best_joints, main_board = get_best_symmetric_layout(board_len_axis, board_row_axis, eff_w, collection_boards)
@@ -349,7 +343,6 @@ M = main_board['length_m']
 min_allowed = max(0.8, M / 3.0)
 
 edge_pieces = []
-use_frame = edge_front or edge_back or edge_left or edge_right
 if use_frame:
     if "Вдоль" in direction_choice:
         front_pieces = get_shifted_edge(layout_matrix, True, offset_left, offset_right) if edge_front else []
@@ -404,42 +397,66 @@ def get_plot(mode):
 
     if mode == "board":
         draw_w = eff_w * 0.8
-        flags = {'F': edge_front, 'B': edge_back, 'L': edge_left, 'R': edge_right}
-        if edge_front: draw_edge(ax, front_pieces, 'front', length, width, draw_w, flags)
-        if edge_back: draw_edge(ax, back_pieces, 'back', length, width, draw_w, flags)
-        if edge_left: draw_edge(ax, left_pieces, 'left', length, width, draw_w, flags)
-        if edge_right: draw_edge(ax, right_pieces, 'right', length, width, draw_w, flags)
+        if use_frame:
+            flags = {'F': True, 'B': True, 'L': True, 'R': True}
+            draw_edge(ax, front_pieces, 'front', length, width, draw_w, flags)
+            draw_edge(ax, back_pieces, 'back', length, width, draw_w, flags)
+            draw_edge(ax, left_pieces, 'left', length, width, draw_w, flags)
+            draw_edge(ax, right_pieces, 'right', length, width, draw_w, flags)
 
         if "Вдоль" in direction_choice:
             for r, row_pieces in enumerate(layout_matrix):
                 y, x = offset_front + r * eff_w, offset_left
-                for w in row_pieces: ax.add_patch(patches.Rectangle((x, y), w, draw_w, color='#8d6e63', ec='black', lw=0.5)); x += w
+                for w in row_pieces:
+                    ax.add_patch(patches.Rectangle((x, y), w, draw_w, color='#8d6e63', ec='black', lw=0.5))
+                    x += w
         else:
             for r, row_pieces in enumerate(layout_matrix):
                 x, y = offset_left + r * eff_w, offset_front
-                for w in row_pieces: ax.add_patch(patches.Rectangle((x, y), draw_w, w, color='#8d6e63', ec='black', lw=0.5)); y += w
-        ax.text(length/2, -0.4, f"Длина: {int(length*1000)} мм", ha='center', fontweight='bold', fontsize=10)
+                for w in row_pieces:
+                    ax.add_patch(patches.Rectangle((x, y), draw_w, w, color='#8d6e63', ec='black', lw=0.5))
+                    y += w
+        ax.text(length/2, -0.4, f"Длина фасада: {int(length*1000)} мм", ha='center', fontweight='bold', fontsize=10)
+        ax.text(-0.6, width/2, f"Глубина: {int(width*1000)} мм", va='center', rotation=90, fontweight='bold', fontsize=10)
 
     elif mode == "frame":
         abs_joints = set()
         if "Вдоль" in direction_choice:
             for jx in best_joints: abs_joints.add(offset_left + jx)
-            for i in range(math.ceil(length / JOIST_STEP_M) + 1): ax.plot([min(i * JOIST_STEP_M, length)]*2, [0, width], color='blue', lw=1, alpha=0.3)
-            for jx in abs_joints: ax.plot([jx-0.02, jx-0.02], [0, width], color='c', lw=1.5); ax.plot([jx+0.02, jx+0.02], [0, width], color='c', lw=1.5)
+            for i in range(math.ceil(length / JOIST_STEP_M) + 1): 
+                cx = min(i * JOIST_STEP_M, length)
+                ax.plot([cx, cx], [0, width], color='blue', lw=1, alpha=0.3)
+            for jx in abs_joints:
+                ax.plot([jx-0.02, jx-0.02], [0, width], color='c', lw=1.5, alpha=0.9)
+                ax.plot([jx+0.02, jx+0.02], [0, width], color='c', lw=1.5, alpha=0.9)
             if frame_choice and "Грунт" in base_type:
-                for j in range(pc): ax.plot([0, length], [j * step_y]*2, color='red', lw=3)
+                for j in range(pc):
+                    cy = j * step_y
+                    ax.plot([0, length], [cy, cy], color='red', lw=3)
         else:
             for jy in best_joints: abs_joints.add(offset_front + jy)
-            for i in range(math.ceil(width / JOIST_STEP_M) + 1): ax.plot([0, length], [min(i * JOIST_STEP_M, width)]*2, color='blue', lw=1, alpha=0.3)
-            for jy in abs_joints: ax.plot([0, length], [jy-0.02, jy-0.02], color='c', lw=1.5); ax.plot([0, length], [jy+0.02, jy+0.02], color='c', lw=1.5)
+            for i in range(math.ceil(width / JOIST_STEP_M) + 1): 
+                cy = min(i * JOIST_STEP_M, width)
+                ax.plot([0, length], [cy, cy], color='blue', lw=1, alpha=0.3)
+            for jy in abs_joints:
+                ax.plot([0, length], [jy-0.02, jy-0.02], color='c', lw=1.5, alpha=0.9)
+                ax.plot([0, length], [jy+0.02, jy+0.02], color='c', lw=1.5, alpha=0.9)
             if frame_choice and "Грунт" in base_type:
-                for i in range(pr): ax.plot([i * step_x]*2, [0, width], color='red', lw=3)
+                for i in range(pr):
+                    cx = i * step_x
+                    ax.plot([cx, cx], [0, width], color='red', lw=3)
+                    
+        ax.text(length/2, -0.3, "Синим: Сетка лаг | Голубым: Парные лаги | Красным: Несущие балки", color='blue', ha='center', fontsize=10)
 
     elif mode == "piles":
         for i in range(pr):
-            for j in range(pc): ax.add_patch(patches.Circle((i * step_x, j * step_y), 0.15, color='black'))
+            for j in range(pc):
+                px, py = i * step_x, j * step_y
+                ax.add_patch(patches.Circle((px, py), 0.15, color='black'))
+                if i < pr - 1 and j == 0: ax.text(px + step_x/2, py-0.4, f"{int(step_x*1000)} мм", ha='center', fontsize=9)
+                if j < pc - 1 and i == 0: ax.text(px-0.8, py + step_y/2, f"{int(step_y*1000)} мм", va='center', rotation=90, fontsize=9)
 
-    ax.set_aspect('equal'); plt.axis('off')
+    ax.set_xlim(-1.0, length+1.0); ax.set_ylim(-1.2, width+0.5); ax.set_aspect('equal'); plt.axis('off')
     buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150); plt.close(fig); buf.seek(0)
     return buf
 
@@ -471,8 +488,8 @@ col_dl1, col_dl2, col_dl3 = st.columns([1, 2, 1])
 with col_dl2: st.download_button("📥 СКАЧАТЬ ПОЛНЫЙ ПРОЕКТ (PDF)", data=create_pdf(), file_name=f"Terrasa_{client_name}.pdf", mime="application/pdf", use_container_width=True)
 st.divider(); st.subheader("📐 Технические схемы")
 t1, t2, t3 = st.tabs(["Вид настила", "Металлокаркас", "Свайное поле"])
-with t1: st.image(get_plot("board"))
-with t2: st.image(get_plot("frame"))
+with t1: st.image(get_plot("board"), caption="Швы окантовки математически выровнены со швами прилегающих рядов настила.")
+with t2: st.image(get_plot("frame"), caption="Голубые линии — парные лаги под каждый стык.")
 with t3: 
     if piles > 0: st.image(get_plot("piles"))
     else: st.info("Основание — бетон")
