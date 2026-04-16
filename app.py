@@ -106,6 +106,19 @@ def get_shifted_edge(matrix, is_front_or_left, offset_start, offset_end):
     else: p[0] = round(p[0] + offset_start, 2); p[-1] = round(p[-1] + offset_end, 2)
     return p
 
+def get_row_patterns(length, M, min_allowed):
+    if length <= M: return [length], [length]
+    half = length / 2.0; num = int(half // M); edge = half - num * M
+    h_a = ([edge] if edge > 0.01 else []) + [M] * num
+    if len(h_a) > 1 and h_a[0] < min_allowed: comb = h_a[0] + h_a[1]; h_a[0] = comb/2; h_a[1] = comb/2
+    row_A = h_a + h_a[::-1]
+    
+    half_rem = (length - M) / 2.0; num = int(half_rem // M); edge = half_rem - num * M
+    h_b = ([edge] if edge > 0.01 else []) + [M] * num
+    if len(h_b) > 1 and h_b[0] < min_allowed: comb = h_b[0] + h_b[1]; h_b[0] = comb/2; h_b[1] = comb/2
+    row_B = h_b + [M] + h_b[::-1]
+    return [round(x, 2) for x in row_A], [round(x, 2) for x in row_B]
+
 # --- 3. ИНТЕРФЕЙС И ВЫБОР ФОРМЫ ---
 st.set_page_config(page_title="Дача 2000 | Умный Калькулятор", layout="wide")
 st.title("🏗️ Профессиональный проект террасы")
@@ -115,9 +128,7 @@ with col_h2:
     if st.button("🔄 Обновить прайс", use_container_width=True): st.cache_data.clear(); st.rerun()
 
 st.sidebar.header("1. Форма террасы")
-shape_type = st.sidebar.selectbox("Выберите конфигурацию:", [
-    "⬜ Прямоугольная", "📐 Г-образная", "🔲 П-образная"
-])
+shape_type = st.sidebar.selectbox("Выберите конфигурацию:", ["⬜ Прямоугольная", "📐 Г-образная", "🔲 П-образная"])
 
 st.sidebar.header("2. Параметры объекта")
 client_name = st.sidebar.text_input("ФИО Клиента:", "Иван Иванович")
@@ -168,7 +179,6 @@ steps_m = st.sidebar.number_input("Ступени (пог.м):", 0.0, 50.0, 0.0)
 is_complex = shape_type != "⬜ Прямоугольная"
 
 if not is_complex:
-    # Обычный точный расчет
     offset = eff_w if use_frame else 0
     inner_X = round(length - offset*2, 3); inner_Y = round(width - offset*2, 3)
     if inner_X <= 0 or inner_Y <= 0: st.error("Терраса слишком мала."); st.stop()
@@ -203,7 +213,6 @@ if not is_complex:
     clips_packs = math.ceil((math.ceil(width/eff_w) * (joist_count_base + extra_joists)) / 100)
 
 else:
-    # Сложный геометрический расчет (Shapely)
     visual_poly = terrace_poly.buffer(-eff_w, join_style=2) if use_frame else terrace_poly
     minx, miny, maxx, maxy = visual_poly.bounds
     full_w = maxx - minx; full_h = maxy - miny
@@ -211,8 +220,7 @@ else:
     target_len = full_w if "Вдоль" in direction_choice else full_h
     target_side = full_h if "Вдоль" in direction_choice else full_w
     
-    # Ищем лучшую доску условно по габаритам
-    main_board = collection_boards[-1] # берем самую длинную для базы
+    main_board = collection_boards[-1] 
     for b in collection_boards:
         if b['length_m'] >= target_len: main_board = b; break
         
@@ -257,7 +265,6 @@ else:
         
     clips_packs = math.ceil((area * 22) / 100)
 
-# Финальная Смета
 clips_total = clips_packs * 2200
 work_base = area * 2400; work_steps = steps_m * 5200; work_piles = piles * 3600
 
@@ -272,6 +279,16 @@ if piles > 0: work_data.append({"Позиция": f"Монтаж свай ({pile
 grand_total = sum(d['Сумма'] for d in mat_data) + sum(d['Сумма'] for d in work_data)
 
 # --- 5. УНИВЕРСАЛЬНЫЕ ЧЕРТЕЖИ ---
+def draw_edge(ax, pieces, side, L, W, ew, flags):
+    cur = 0
+    for p in pieces:
+        xs = cur; xe = cur + p
+        if side == 'front': pts = [[xs, 0], [xe, 0], [xe, ew], [xs, ew]]; pts[3][0] = ew if xs == 0 and flags['L'] else xs; pts[2][0] = L-ew if round(xe,2) >= round(L,2) and flags['R'] else xe
+        elif side == 'back': pts = [[xs, W], [xe, W], [xe, W-ew], [xs, W-ew]]; pts[3][0] = ew if xs == 0 and flags['L'] else xs; pts[2][0] = L-ew if round(xe,2) >= round(L,2) and flags['R'] else xe
+        elif side == 'left': pts = [[0, xs], [0, xe], [ew, xe], [ew, xs]]; pts[3][1] = ew if xs == 0 and flags['F'] else xs; pts[2][1] = W-ew if round(xe,2) >= round(W,2) and flags['B'] else xe
+        elif side == 'right': pts = [[L, xs], [L, xe], [L-ew, xe], [L-ew, xs]]; pts[3][1] = ew if xs == 0 and flags['F'] else xs; pts[2][1] = W-ew if round(xe,2) >= round(W,2) and flags['B'] else xe
+        ax.add_patch(patches.Polygon(pts, color='#5d4037', ec='black', lw=1.2)); cur += p
+
 def get_plot(mode):
     fig, ax = plt.subplots(figsize=(10, 6))
     if not is_complex:
@@ -316,7 +333,7 @@ def get_plot(mode):
             for i in range(pr):
                 for j in range(pc): ax.add_patch(patches.Circle((i * step_x, j * step_y), 0.15, color='black'))
     
-    else: # СЛОЖНАЯ ФОРМА
+    else:
         if mode == "board":
             for b_geom in boards_in_poly:
                 if isinstance(b_geom, Polygon):
@@ -331,7 +348,6 @@ def get_plot(mode):
                         x, y = g.exterior.xy; ax.fill(x, y, color='#5d4037', ec='black', lw=1.2)
         elif mode == "frame":
             minx, miny, maxx, maxy = terrace_poly.bounds
-            # Рисуем лаги, пересекая их с полигоном террасы!
             if "Вдоль" in direction_choice:
                 for i in range(int(maxx / JOIST_STEP_M) + 2):
                     line = LineString([(i * JOIST_STEP_M, miny-1), (i * JOIST_STEP_M, maxy+1)])
@@ -340,7 +356,7 @@ def get_plot(mode):
                         if inter.geom_type == 'LineString': ax.plot(*inter.xy, color='blue', lw=1, alpha=0.4)
                         elif inter.geom_type == 'MultiLineString':
                             for g in inter.geoms: ax.plot(*g.xy, color='blue', lw=1, alpha=0.4)
-                if frame_choice: # Балки поперек
+                if frame_choice: 
                     for j in range(int(maxy / PILE_STEP_M) + 2):
                         line = LineString([(minx-1, j * PILE_STEP_M), (maxx+1, j * PILE_STEP_M)])
                         inter = line.intersection(terrace_poly)
@@ -349,7 +365,6 @@ def get_plot(mode):
                             elif inter.geom_type == 'MultiLineString':
                                 for g in inter.geoms: ax.plot(*g.xy, color='red', lw=3)
             else:
-                # Поперек
                 for j in range(int(maxy / JOIST_STEP_M) + 2):
                     line = LineString([(minx-1, j * JOIST_STEP_M), (maxx+1, j * JOIST_STEP_M)])
                     inter = line.intersection(terrace_poly)
@@ -365,7 +380,6 @@ def get_plot(mode):
                             if inter.geom_type == 'LineString': ax.plot(*inter.xy, color='red', lw=3)
                             elif inter.geom_type == 'MultiLineString':
                                 for g in inter.geoms: ax.plot(*g.xy, color='red', lw=3)
-
         elif mode == "piles":
             minx, miny, maxx, maxy = terrace_poly.bounds
             pr = math.ceil(maxx/PILE_STEP_M) + 1; pc = math.ceil(maxy/PILE_STEP_M) + 1
@@ -375,21 +389,11 @@ def get_plot(mode):
                     if terrace_poly.contains(pt) or terrace_poly.touches(pt):
                         ax.add_patch(patches.Circle((pt.x, pt.y), 0.15, color='black'))
 
-    def draw_edge(ax, pieces, side, L, W, ew, flags): # helper для прямоугольника
-        cur = 0
-        for p in pieces:
-            xs = cur; xe = cur + p
-            if side == 'front': pts = [[xs, 0], [xe, 0], [xe, ew], [xs, ew]]; pts[3][0] = ew if xs == 0 and flags['L'] else xs; pts[2][0] = L-ew if round(xe,2) >= round(L,2) and flags['R'] else xe
-            elif side == 'back': pts = [[xs, W], [xe, W], [xe, W-ew], [xs, W-ew]]; pts[3][0] = ew if xs == 0 and flags['L'] else xs; pts[2][0] = L-ew if round(xe,2) >= round(L,2) and flags['R'] else xe
-            elif side == 'left': pts = [[0, xs], [0, xe], [ew, xe], [ew, xs]]; pts[3][1] = ew if xs == 0 and flags['F'] else xs; pts[2][1] = W-ew if round(xe,2) >= round(W,2) and flags['B'] else xe
-            elif side == 'right': pts = [[L, xs], [L, xe], [L-ew, xe], [L-ew, xs]]; pts[3][1] = ew if xs == 0 and flags['F'] else xs; pts[2][1] = W-ew if round(xe,2) >= round(W,2) and flags['B'] else xe
-            ax.add_patch(patches.Polygon(pts, color='#5d4037', ec='black', lw=1.2)); cur += p
-
     ax.set_aspect('equal'); plt.axis('off')
     buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150); plt.close(fig); buf.seek(0)
     return buf
 
-# --- UI Рендер ---
+# UI Рендер
 st.markdown(f"<h2 style='text-align: center; color: #1b5e20;'>Итоговая стоимость: {grand_total:,.0f} руб.</h2>", unsafe_allow_html=True)
 colA, colB = st.columns(2); colA.markdown("#### 🪵 Смета материалов"); colA.table(mat_data); colB.markdown("#### ⚒️ Смета работ"); colB.table(work_data)
 st.divider()
@@ -398,4 +402,4 @@ with t1: st.image(get_plot("board"))
 with t2: st.image(get_plot("frame"))
 with t3: 
     if piles > 0: st.image(get_plot("piles"))
-    else: st.info("Основание — бетон, сваи не требуются.")
+    else: st.info("Бетон")
