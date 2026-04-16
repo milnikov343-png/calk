@@ -27,7 +27,6 @@ def load_google_sheet():
             width = int(row['Ширина (мм)'])
             length_m = float(row['Длина (м)'])
 
-            # Группируем длинны в одну коллекцию
             base_name = re.sub(r'\d{4}[хx*]\d{2,3}[хx*]\d{2,3}', '', raw_name, flags=re.IGNORECASE)
             base_name = re.sub(r'\s*\d+(\.\d+)?\s*м\b', '', base_name, flags=re.IGNORECASE).replace('  ', ' ').strip()
             
@@ -66,7 +65,6 @@ def fill_segment(L, M, min_allowed, step):
     if rem > 0.01:
         pieces.append(round(rem, 2))
     
-    # Защита от коротких обрезков
     if len(pieces) > 1 and pieces[-1] < min_allowed:
         deficit = math.ceil((min_allowed - pieces[-1]) / step) * step
         if pieces[-2] - deficit >= min_allowed:
@@ -81,7 +79,7 @@ def fill_segment(L, M, min_allowed, step):
     return pieces
 
 def get_1d_symmetric_pieces(L, M, min_allowed, step):
-    """Симметричная нарезка торцевой доски (для перпендикулярных сторон)"""
+    """Симметричная нарезка для перпендикулярных краев рамки"""
     if L <= 0.01: return []
     eff_M = math.floor(M / step) * step
     if eff_M <= 0: eff_M = M
@@ -109,11 +107,9 @@ def get_best_symmetric_layout(target_len, target_width, eff_w, collection_boards
             row_A = [round(target_len, 2)]
             row_B = [round(target_len, 2)]
         else:
-            # РЯД А (Шов по центру)
             cx = math.floor((target_len / 2) / JOIST_STEP_M) * JOIST_STEP_M
             row_A = fill_segment(cx, eff_M, min_allowed, JOIST_STEP_M)[::-1] + fill_segment(round(target_len - cx, 2), eff_M, min_allowed, JOIST_STEP_M)
             
-            # РЯД Б (Целая доска по центру)
             left_x = math.floor(((target_len - eff_M) / 2) / JOIST_STEP_M) * JOIST_STEP_M
             if left_x < 0: left_x = 0
             right_x = left_x + eff_M
@@ -130,7 +126,6 @@ def get_best_symmetric_layout(target_len, target_width, eff_w, collection_boards
                 jx = round(jx + p, 2)
                 joints.add(jx)
 
-        # Оптимизация
         flat_pieces = sorted([p for row in layout_matrix for p in row], reverse=True)
         bins = []
         for p in flat_pieces:
@@ -144,8 +139,7 @@ def get_best_symmetric_layout(target_len, target_width, eff_w, collection_boards
             if not placed:
                 bins.append(p)
                 
-        qty = len(bins)
-        total_cost = qty * base_board['board_cost']
+        total_cost = len(bins) * base_board['board_cost']
 
         if total_cost < best_cost:
             best_cost = total_cost
@@ -172,6 +166,26 @@ def optimize_waste(pieces_list, allowed_board):
     qty = len(bins)
     sum_cost = qty * allowed_board['board_cost']
     return {allowed_board['name']: {"qty": qty, "sum": sum_cost, "unit": allowed_board['unit']}}
+
+# НОВАЯ ФУНКЦИЯ: Умное копирование рядов для рамки (сохранение ритма А-Б-А-Б)
+def get_shifted_edge(matrix, is_front_or_left, offset_start, offset_end):
+    if not matrix: return []
+    # Если передний край -> копируем второй ряд (Ряд Б). Если задний -> предпоследний ряд.
+    if len(matrix) > 1:
+        row_to_copy = matrix[1] if is_front_or_left else matrix[-2]
+    else:
+        row_to_copy = matrix[0]
+        
+    p = list(row_to_copy)
+    if not p: return []
+    
+    # Корректируем длину крайних кусков на величину углов (запил 45)
+    if len(p) == 1:
+        p[0] = round(p[0] + offset_start + offset_end, 2)
+    else:
+        p[0] = round(p[0] + offset_start, 2)
+        p[-1] = round(p[-1] + offset_end, 2)
+    return p
 
 # --- 3. ИНТЕРФЕЙС ---
 st.set_page_config(page_title="Дача 2000 | Умный Калькулятор", layout="wide")
@@ -237,50 +251,22 @@ else:
 # Раскладка основной доски
 layout_matrix, best_joints, main_board = get_best_symmetric_layout(board_len_axis, board_row_axis, eff_w, collection_boards)
 
-# НОВАЯ ЛОГИКА: Нарезка торцевой доски с копированием стыков соседних рядов!
-front_pieces = []
-back_pieces = []
-left_pieces = []
-right_pieces = []
-
+# Нарезка торцевой доски: СТРОГОЕ СОВПАДЕНИЕ ШВОВ
 M = main_board['length_m']
 eff_M = math.floor(M / JOIST_STEP_M) * JOIST_STEP_M
 if eff_M <= 0: eff_M = M
 min_allowed = max(0.8, eff_M / 3.0)
 
 if "Вдоль" in direction_choice:
-    if edge_front and layout_matrix:
-        p = list(layout_matrix[0])
-        if p:
-            p[0] = round(p[0] + offset_left, 2)
-            p[-1] = round(p[-1] + offset_right, 2)
-        front_pieces = p
-    if edge_back and layout_matrix:
-        p = list(layout_matrix[-1])
-        if p:
-            p[0] = round(p[0] + offset_left, 2)
-            p[-1] = round(p[-1] + offset_right, 2)
-        back_pieces = p
-        
-    if edge_left: left_pieces = get_1d_symmetric_pieces(width, M, min_allowed, JOIST_STEP_M)
-    if edge_right: right_pieces = get_1d_symmetric_pieces(width, M, min_allowed, JOIST_STEP_M)
+    front_pieces = get_shifted_edge(layout_matrix, True, offset_left, offset_right) if edge_front else []
+    back_pieces = get_shifted_edge(layout_matrix, False, offset_left, offset_right) if edge_back else []
+    left_pieces = get_1d_symmetric_pieces(width, M, min_allowed, JOIST_STEP_M) if edge_left else []
+    right_pieces = get_1d_symmetric_pieces(width, M, min_allowed, JOIST_STEP_M) if edge_right else []
 else:
-    # Поперек
-    if edge_left and layout_matrix:
-        p = list(layout_matrix[0])
-        if p:
-            p[0] = round(p[0] + offset_front, 2)
-            p[-1] = round(p[-1] + offset_back, 2)
-        left_pieces = p
-    if edge_right and layout_matrix:
-        p = list(layout_matrix[-1])
-        if p:
-            p[0] = round(p[0] + offset_front, 2)
-            p[-1] = round(p[-1] + offset_back, 2)
-        right_pieces = p
-        
-    if edge_front: front_pieces = get_1d_symmetric_pieces(length, M, min_allowed, JOIST_STEP_M)
-    if edge_back: back_pieces = get_1d_symmetric_pieces(length, M, min_allowed, JOIST_STEP_M)
+    left_pieces = get_shifted_edge(layout_matrix, True, offset_front, offset_back) if edge_left else []
+    right_pieces = get_shifted_edge(layout_matrix, False, offset_front, offset_back) if edge_right else []
+    front_pieces = get_1d_symmetric_pieces(length, M, min_allowed, JOIST_STEP_M) if edge_front else []
+    back_pieces = get_1d_symmetric_pieces(length, M, min_allowed, JOIST_STEP_M) if edge_back else []
 
 edge_pieces = front_pieces + back_pieces + left_pieces + right_pieces
 
@@ -444,7 +430,7 @@ def create_pdf():
     
     pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
 
-    for m, t in [("board", f"Настил: Симметрия от центра, {direction_choice}"), ("frame", "Схема подсистемы (показаны парные лаги)"), ("piles", "Свайное поле")]:
+    for m, t in [("board", f"Настил: {direction_choice} (С окантовкой)"), ("frame", "Схема подсистемы (показаны парные лаги)"), ("piles", "Свайное поле")]:
         if m == "piles" and piles == 0: continue
         pdf.add_page(); pdf.cell(200, 10, t, ln=True, align='C'); pdf.image(get_plot(m), x=15, y=30, w=180)
     return bytes(pdf.output())
