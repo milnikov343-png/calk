@@ -197,53 +197,71 @@ st.markdown("""
 <style>
 [data-testid="collapsedControl"] { display: none; }
 section[data-testid="stSidebar"] { display: none; }
+/* Делаем липкой только самую первую полосу (с логотипом и названием) */
 div[data-testid="stVerticalBlock"] > div:first-of-type {
     position: sticky;
     top: 0px;
     z-index: 999;
-    background-color: white;
-    padding-top: 1rem;
-    padding-bottom: 1rem;
-    border-bottom: 2px solid #ddd;
-    margin-bottom: 2rem;
+    background-color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(5px);
+    padding: 0.5rem 1rem 0rem 1rem;
+    border-bottom: 2px solid #4CAF50;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    margin-bottom: 1.5rem;
 }
 @media (prefers-color-scheme: dark) {
     div[data-testid="stVerticalBlock"] > div:first-of-type {
-        background-color: #0e1117;
-        border-bottom: 2px solid #333;
+        background-color: rgba(14, 17, 23, 0.95);
+        border-bottom: 2px solid #2E7D32;
     }
 }
 /* Компактные поля ввода */
-div[data-baseweb="input"] {
-    font-size: 14px;
-}
+div[data-baseweb="input"] { font-size: 14px; }
 div[data-testid="stNumberInput"] label p, div[data-testid="stSelectbox"] label p {
     font-size: 13px !important;
+    font-weight: 500 !important;
+    color: #555;
+}
+@media (prefers-color-scheme: dark) {
+    div[data-testid="stNumberInput"] label p, div[data-testid="stSelectbox"] label p { color: #ccc; }
+}
+/* Кастомный стиль для заголовков экспандера */
+button[data-testid="stExpanderToggleIcon"] { display: none !important; }
+div[data-testid="stExpander"] details summary p {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #2E7D32;
+}
+@media (prefers-color-scheme: dark) {
+    div[data-testid="stExpander"] details summary p { color: #4CAF50; }
 }
 </style>
 """, unsafe_allow_html=True)
 
 with st.container():
-    col_logo, col_title, col_btn = st.columns([1.5, 6, 1.5])
+    col_logo, col_title, col_btn = st.columns([1, 6, 1.5], gap="small")
     with col_logo:
         try:
-            st.image("logo.png", use_column_width=True)
+            st.image("logo.png", width=100)
         except:
-            st.markdown("<h2>Дача 2000</h2>", unsafe_allow_html=True)
+            st.markdown("<h3 style='color:#2E7D32; margin:0;'>Дача 2000</h3>", unsafe_allow_html=True)
     with col_title:
-        st.title("🏗️ Профессиональный проект террасы")
+        st.markdown("<h2 style='margin:0; padding-top:10px; font-weight:700;'>Профессиональный проект террасы</h2>", unsafe_allow_html=True)
     with col_btn:
-        st.write("")
-        st.write("")
+        st.markdown("<div style='padding-top:15px;'></div>", unsafe_allow_html=True)
         if st.button("🔄 Обновить прайс", use_container_width=True):
             st.cache_data.clear(); st.rerun()
 
-    c1, c2, c3, c4 = st.columns(4)
+with st.expander("🛠️ ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (Нажмите, чтобы развернуть/свернуть)", expanded=True):
+    st.markdown("<div style='padding-top: 5px;'></div>", unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns([1.1, 1.1, 1, 1], gap="large")
     
     with c1:
-        st.subheader("1. Объект и Форма")
+        st.markdown("#### 📐 1. Объект и Форма")
         client_name = st.text_input("ФИО Клиента:", "Иван Иванович")
         shape_type = st.selectbox("Конфигурация:", ["⬜ Прямоугольная (Стандарт)", "📐 Г-образная (Угловая)", "🔲 П-образная (С вырезом)", "⏺️ Округлая (Овал / Круг)", "✏️ Свой контур (По координатам)"])
+        
+        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
         
         if shape_type == "⬜ Прямоугольная (Стандарт)":
             c_l, c_w = st.columns(2)
@@ -270,7 +288,7 @@ with st.container():
             length = 5.0; width = 5.0
             
     with c2:
-        st.subheader("2. Материал Обшивки")
+        st.markdown("#### 🪵 2. Обшивка")
         brand_choice = st.selectbox("Бренд:", list(PARSED_BOARDS.keys()))
         if PARSED_BOARDS[brand_choice]:
             collection_name = st.selectbox("Коллекция:", list(PARSED_BOARDS[brand_choice].keys()))
@@ -280,19 +298,23 @@ with st.container():
             st.stop()
         direction_choice = st.radio("Направление укладки:", ["Вдоль фасада (по длине X)", "Поперек фасада (по глубине Y)"])
         
+        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
+        
         use_frame = st.checkbox("Окантовка (Picture Frame)", value=True)
         if use_frame:
             c_f1, c_f2 = st.columns(2)
             edge_front = c_f1.checkbox("Спереди", value=True)
-            edge_back = c_f2.checkbox("Сзади", value=False)
             edge_left = c_f1.checkbox("Слева", value=True)
+            edge_back = c_f2.checkbox("Сзади", value=False)
             edge_right = c_f2.checkbox("Справа", value=True)
         else:
             edge_front = edge_back = edge_left = edge_right = False
 
     with c3:
-        st.subheader("3. Бассейн")
+        st.markdown("#### 🏊 3. Бассейн")
         has_pool = st.checkbox("Встроенный бассейн", value=False)
+        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
+        
         if has_pool:
             pool_shape = st.radio("Форма бассейна:", ["⬜ Прямоугольный", "⏺️ Круглый", "⬭ Овальный"])
             c_pl, c_pw = st.columns(2)
@@ -305,9 +327,11 @@ with st.container():
             c_ox, c_oy = st.columns(2)
             pool_offset_x = c_ox.number_input("Смещение X, м:", 0.0, 50.0, 1.0)
             pool_offset_y = c_oy.number_input("Смещение Y, м:", 0.0, 50.0, 1.0)
+        else:
+            st.info("Терраса не предполагает вырезов под бассейн.")
 
     with c4:
-        st.subheader("4. Подсистема")
+        st.markdown("#### ⛓️ 4. Подсистема")
         c_sub1, c_sub2 = st.columns(2)
         with c_sub1:
              base_type = st.radio("Основание:", ["Грунт (Сваи)", "Бетон"])
