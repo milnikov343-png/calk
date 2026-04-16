@@ -54,44 +54,107 @@ METAL_MARGIN = 1.15
 GAP_MM = 5
 JOIST_STEP_M = 0.4
 PILE_STEP_M = 2.0
+MIN_CUT_LENGTH = 1.0  # Минимальная допустимая длина обрезанной доски (м)
 
-# --- 2. ИДЕАЛЬНАЯ ПАЛУБНАЯ РАСКЛАДКА (БЕЗ ВНУТРЕННИХ ОБРЕЗКОВ) ---
-def get_row_patterns(length, M, min_allowed):
-    if length <= M: return [round(length, 2)], [round(length, 2)]
-    
-    K = int(length // M)
-    R = round(length - K * M, 2)
+# --- 2. ПАЛУБНАЯ РАСКЛАДКА «КИРПИЧНАЯ КЛАДКА» ---
+# Правила:
+#   1. Внутри ряда — ТОЛЬКО целые (нерезанные) доски длиной M
+#   2. Обрезанные доски допустимы ТОЛЬКО по краям (первая и/или последняя в ряду)
+#   3. Минимальная длина обрезанной доски — MIN_CUT_LENGTH (1 м)
+#   4. Два паттерна (A и B) чередуются для создания рисунка «кирпичная кладка»
+#
+# Примеры:
+#   9м, доска 3м  → ряд A = [3, 3, 3],       ряд B = [1.5, 3, 3, 1.5]
+#   10м, доска 4м → ряд A = [4, 4, 2],        ряд B = [2, 4, 4]
+#   12м, доска 4м → ряд A = [4, 4, 4],        ряд B = [2, 4, 4, 2]
+#   8.5м, доска 4м→ ряд A = [2.25, 4, 2.25],  ряд B = [3.25, 4, 1.25]
 
-    # Идеальная сдвижка: если остаток больше минимально допустимого (как 2-4-4 и 4-4-2)
-    if R >= min_allowed:
-        row_A = [R] + [M] * K
-        row_B = [M] * K + [R]
-        # Если терраса делится ровно (например 9м доской 3м), делаем классику от центра
-        if R == 0 and K > 1:
-            row_A = [M] * K
-            row_B = [M/2.0] + [M] * (K-1) + [M/2.0]
-        return [round(x, 2) for x in row_A], [round(x, 2) for x in row_B]
+def get_row_patterns(length, M):
+    """
+    Генерирует два чередующихся паттерна раскладки досок.
+    length — длина ряда (м), M — длина целой доски (м).
+    Возвращает (row_A, row_B) — два списка длин кусков.
+    """
+    length = round(length, 3)
+    if length <= 0.01:
+        return [], []
 
-    # Если остаток слишком мал (огрызок), забираем одну целую доску из центра
-    if K > 0:
-        K = K - 1
-        R = R + M
-        # Теперь остаток R большой. 
-        # Делаем симметричную строку (пляшем от центра)
-        row_A = [R / 2.0] + [M] * K + [R / 2.0]
-        # Делаем сдвинутую строку для разбежки швов
-        row_B = [min_allowed] + [M] * K + [R - min_allowed]
-        return [round(x, 2) for x in row_A], [round(x, 2) for x in row_B]
+    # Одна доска или меньше — резать нечего
+    if length <= M:
+        return [round(length, 3)], [round(length, 3)]
 
-    return [round(length, 2)], [round(length, 2)]
+    K = int(length // M)       # сколько целых досок помещается
+    R = round(length - K * M, 3)  # остаток
 
-def get_1d_symmetric_pieces(L, M, min_allowed):
+    # ─── СЛУЧАЙ 1: Длина делится ровно (остаток = 0) ───
+    # Пример: 9м / 3м → [3, 3, 3] и [1.5, 3, 3, 1.5]
+    if abs(R) < 0.001:
+        row_A = [M] * K
+        half = round(M / 2.0, 3)
+        if half >= MIN_CUT_LENGTH and K > 1:
+            row_B = [half] + [M] * (K - 1) + [half]
+        else:
+            # Половина доски слишком коротка — без разбежки
+            row_B = list(row_A)
+        return row_A, row_B
+
+    # ─── СЛУЧАЙ 2: Остаток ≥ 1м — допустимый крайний кусок ───
+    # Пример: 10м / 4м → [4, 4, 2] и [2, 4, 4]
+    if R >= MIN_CUT_LENGTH:
+        row_A = [M] * K + [R]       # целые доски + остаток справа
+        row_B = [R] + [M] * K       # остаток слева + целые доски
+        return row_A, row_B
+
+    # ─── СЛУЧАЙ 3: Остаток < 1м — огрызок недопустим ───
+    # Убираем одну целую доску и перераспределяем на края симметрично
+    # Пример: 8.5м / 4м → R=0.5 (мало!) → K=1, R_total=4.5
+    #         → [2.25, 4, 2.25] и [3.25, 4, 1.25]
+    K -= 1
+    R_total = round(R + M, 3)
+    half_R = round(R_total / 2.0, 3)
+
+    if half_R >= MIN_CUT_LENGTH:
+        # Основной ряд: симметричные обрезки по краям
+        row_A = [half_R] + [M] * K + [half_R]
+
+        # Ряд со смещением: сдвигаем швы для разбежки
+        shift = round(min(half_R - MIN_CUT_LENGTH, M / 4.0), 3)
+        if shift >= 0.15:
+            edge_left = round(half_R + shift, 3)
+            edge_right = round(half_R - shift, 3)
+            # Проверяем, что левый край не длиннее доски
+            if edge_left <= M and edge_right >= MIN_CUT_LENGTH:
+                row_B = [edge_left] + [M] * K + [edge_right]
+            else:
+                row_B = list(row_A)
+        else:
+            row_B = list(row_A)
+    else:
+        # Даже половина слишком коротка — убираем ещё одну доску
+        K = max(0, K - 1)
+        R_total = round(length - K * M, 3)
+        half_R = round(R_total / 2.0, 3)
+        if half_R >= MIN_CUT_LENGTH and half_R <= M:
+            row_A = [half_R] + [M] * K + [half_R]
+        else:
+            row_A = [round(length, 3)]
+        row_B = list(row_A)
+
+    return row_A, row_B
+
+
+def get_1d_symmetric_pieces(L, M):
     """Нарезка торцевой доски с сохранением ритма"""
     if L <= 0.01: return []
-    row_A, _ = get_row_patterns(L, M, min_allowed)
+    row_A, _ = get_row_patterns(L, M)
     return row_A
 
+
 def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards):
+    """
+    Перебирает все типоразмеры досок в коллекции и выбирает тот,
+    который даёт минимальную стоимость (= минимальную обрезь).
+    """
     best_cost = float('inf')
     best_layout = None
     best_joints = None
@@ -99,35 +162,37 @@ def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards):
 
     for base_board in collection_boards:
         M = base_board['length_m']
-        min_allowed = max(0.8, M / 3.0)
-        
+
         layout_matrix = []
         joints = set()
         for r, L in enumerate(row_lengths_arr):
             if L <= 0.01:
                 layout_matrix.append([])
                 continue
-            row_A, row_B = get_row_patterns(L, M, min_allowed)
+            row_A, row_B = get_row_patterns(L, M)
             current_row = row_A if r % 2 == 0 else row_B
             layout_matrix.append(current_row)
+            # Собираем координаты стыков для парных лаг
             jx = 0
             for p in current_row[:-1]:
-                jx = round(jx + p, 2)
+                jx = round(jx + p, 3)
                 joints.add(jx)
 
+        # Оптимизация нарезки: bin-packing (First Fit Decreasing)
+        # Обрезки от одного ряда используются в другом для экономии
         flat_pieces = sorted([p for row in layout_matrix for p in row], reverse=True)
         bins = []
         for p in flat_pieces:
             placed = False
             bins.sort(key=lambda b: M - b)
             for i in range(len(bins)):
-                if round(M - bins[i], 2) >= p:
-                    bins[i] = round(bins[i] + p, 2)
+                if round(M - bins[i], 3) >= p:
+                    bins[i] = round(bins[i] + p, 3)
                     placed = True
                     break
             if not placed:
                 bins.append(p)
-                
+
         total_cost = len(bins) * base_board['board_cost']
 
         if total_cost < best_cost:
@@ -391,20 +456,19 @@ layout_matrix, best_joints, main_board = get_best_symmetric_layout(row_lengths_a
 
 # Нарезка торцевой доски
 M = main_board['length_m']
-min_allowed = max(0.8, M / 3.0)
 
 edge_pieces = []
 if use_frame:
     if "Вдоль" in direction_choice:
         front_pieces = get_shifted_edge(layout_matrix, True, offset_left, offset_right) if edge_front else []
         back_pieces = get_shifted_edge(layout_matrix, False, offset_left, offset_right) if edge_back else []
-        left_pieces = get_1d_symmetric_pieces(width, M, min_allowed) if edge_left else []
-        right_pieces = get_1d_symmetric_pieces(width, M, min_allowed) if edge_right else []
+        left_pieces = get_1d_symmetric_pieces(width, M) if edge_left else []
+        right_pieces = get_1d_symmetric_pieces(width, M) if edge_right else []
     else:
         left_pieces = get_shifted_edge(layout_matrix, True, offset_front, offset_back) if edge_left else []
         right_pieces = get_shifted_edge(layout_matrix, False, offset_front, offset_back) if edge_right else []
-        front_pieces = get_1d_symmetric_pieces(length, M, min_allowed) if edge_front else []
-        back_pieces = get_1d_symmetric_pieces(length, M, min_allowed) if edge_back else []
+        front_pieces = get_1d_symmetric_pieces(length, M) if edge_front else []
+        back_pieces = get_1d_symmetric_pieces(length, M) if edge_back else []
 
     edge_pieces = front_pieces + back_pieces + left_pieces + right_pieces
 
