@@ -213,6 +213,13 @@ div[data-testid="stVerticalBlock"] > div:first-of-type {
         border-bottom: 2px solid #333;
     }
 }
+/* Компактные поля ввода */
+div[data-baseweb="input"] {
+    font-size: 14px;
+}
+div[data-testid="stNumberInput"] label p, div[data-testid="stSelectbox"] label p {
+    font-size: 13px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -239,8 +246,9 @@ with st.container():
         shape_type = st.selectbox("Конфигурация:", ["⬜ Прямоугольная (Стандарт)", "📐 Г-образная (Угловая)", "🔲 П-образная (С вырезом)", "⏺️ Округлая (Овал / Круг)", "✏️ Свой контур (По координатам)"])
         
         if shape_type == "⬜ Прямоугольная (Стандарт)":
-            length = st.number_input("Длина фасада (X), м:", 1.0, 50.0, 9.0)
-            width = st.number_input("Глубина (Y), м:", 1.0, 50.0, 4.0)
+            c_l, c_w = st.columns(2)
+            length = c_l.number_input("Длина (X), м:", 1.0, 50.0, 9.0)
+            width = c_w.number_input("Глубина (Y), м:", 1.0, 50.0, 4.0)
         elif shape_type == "📐 Г-образная (Угловая)":
             c_l, c_w = st.columns(2)
             length = c_l.number_input("Длина X, м:", 1.0, 50.0, 6.0)
@@ -300,10 +308,13 @@ with st.container():
 
     with c4:
         st.subheader("4. Подсистема")
-        base_type = st.radio("Основание:", ["Грунт (Сваи)", "Бетон"])
-        joist_choice = st.selectbox("Лаги (60х40):", list(PIPES_JOIST.keys()))
-        frame_choice = st.selectbox("Каркас (80х80):", list(PIPES_FRAME.keys())) if "Грунт" in base_type else None
-        steps_m = st.number_input("Ступени (пог.м):", 0.0, 50.0, 0.0)
+        c_sub1, c_sub2 = st.columns(2)
+        with c_sub1:
+             base_type = st.radio("Основание:", ["Грунт (Сваи)", "Бетон"])
+             steps_m = st.number_input("Ступени (м):", 0.0, 50.0, 0.0)
+        with c_sub2:
+             joist_choice = st.selectbox("Лаги:", list(PIPES_JOIST.keys()))
+             frame_choice = st.selectbox("Каркас:", list(PIPES_FRAME.keys())) if "Грунт" in base_type else None
 
 
 # --- БЛОКИРОВКА СЛОЖНЫХ РАСЧЕТОВ ---
