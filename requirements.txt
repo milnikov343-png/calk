@@ -4,4 +4,3 @@ fpdf2
 requests
 beautifulsoup4
 pandas
-shapely
