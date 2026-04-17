@@ -298,9 +298,10 @@ section[data-testid="stSidebar"] { display: none; }
     background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 40%, #16213e 100%);
 }
 
-/* Шрифт */
-html, body, [class*="css"] {
+/* Шрифт и читаемость текста */
+html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li {
     font-family: 'Inter', sans-serif;
+    color: #f8f9fa !important;
 }
 
 /* Заголовок-шапка */

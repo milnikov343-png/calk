@@ -581,9 +581,9 @@ def create_fence_pdf(result, params):
     pdf.add_page()
 
     # Подключаем шрифт с кириллицей
-    font_path = os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf")
+    font_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "DejaVuSans.ttf")
     if os.path.exists(font_path):
-        pdf.add_font("DejaVu", "", font_path, uni=True)
+        pdf.add_font("DejaVu", "", font_path)
         pdf.set_font("DejaVu", "", 10)
         font = "DejaVu"
     else:
@@ -708,9 +708,10 @@ section[data-testid="stSidebar"] { display: none; }
     background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 40%, #16213e 100%);
 }
 
-/* Шрифт */
-html, body, [class*="css"] {
+/* Шрифт и читаемость текста */
+html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li {
     font-family: 'Inter', sans-serif;
+    color: #f8f9fa !important;
 }
 
 /* Заголовок-шапка */
