@@ -248,6 +248,40 @@ def draw_edge(ax, pieces, side, L, W, ew, flags):
         ax.add_patch(patches.Polygon(pts, color='#5d4037', ec='black', lw=1.2))
         cur += p
 
+# --- Геометрия для нестандартных полигонов ---
+def point_in_polygon(x, y, vertices):
+    """Ray-casting: проверка попадания точки внутрь полигона."""
+    n = len(vertices)
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = vertices[i]
+        xj, yj = vertices[j]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+def polygon_row_segments(vertices, y):
+    """Scanline: горизонтальные отрезки полигона на высоте y. Возвращает [(x_start, x_end), ...]."""
+    intersections = []
+    n = len(vertices)
+    for i in range(n):
+        x1, y1 = vertices[i]
+        x2, y2 = vertices[(i + 1) % n]
+        if y1 == y2:
+            continue
+        if min(y1, y2) <= y < max(y1, y2):
+            t = (y - y1) / (y2 - y1)
+            x = x1 + t * (x2 - x1)
+            intersections.append(round(x, 4))
+    intersections.sort()
+    segments = []
+    for i in range(0, len(intersections) - 1, 2):
+        if intersections[i + 1] - intersections[i] > 0.001:
+            segments.append((intersections[i], intersections[i + 1]))
+    return segments
+
 # --- 3. ИНТЕРФЕЙС И ВЫБОР ФОРМЫ ---
 st.set_page_config(page_title="Дача 2000 | Умный Калькулятор", layout="wide", initial_sidebar_state="collapsed")
 
@@ -553,30 +587,196 @@ if is_complex:
         length = 1.0
         width = 1.0
 
-    # --- Кнопка расчёта ---
-    st.markdown("---")
-    c_b1, c_b2, c_b3 = st.columns([1, 2, 1])
-    with c_b2:
-        calc_pressed = st.button("🔢 РАССЧИТАТЬ НЕСТАНДАРТНУЮ ТЕРРАСУ", use_container_width=True, type="primary")
+    # --- ПОЛНЫЙ РАСЧЁТ НЕСТАНДАРТНОЙ ТЕРРАСЫ ---
+    if len(vertices_mm) < 3:
+        st.info("👆 Нарисуйте контур на холсте, затем нажмите кнопку.")
+        st.stop()
 
-    if calc_pressed and len(vertices_mm) >= 3:
-        st.success(f"✅ Контур принят: {n} вершин, площадь {area_m2:.2f} м²")
-        info1, info2 = st.columns(2)
-        with info1:
-            st.markdown("#### 📋 Параметры")
-            st.markdown(f"- **Форма:** {shape_type}")
-            st.markdown(f"- **Площадь:** {area_m2:.2f} м²")
-            st.markdown(f"- **Габариты:** {range_x} × {range_y} мм")
-            st.markdown(f"- **Материал:** {brand_choice} — {collection_name}")
-            st.markdown(f"- **Основание:** {base_type}")
-        with info2:
-            st.markdown("#### 🚧 Следующий этап")
-            st.markdown("- Раскладка террасной доски")
-            st.markdown("- Схема свайного поля")
-            st.markdown("- Металлокаркас")
-            st.markdown("- Смета материалов и работ")
-    elif calc_pressed:
-        st.warning("⚠️ Сначала нарисуйте контур террасы на холсте!")
+    # Координаты в метрах
+    verts_m = [(v[0] / 1000.0, v[1] / 1000.0) for v in vertices_mm]
+    n_v = len(verts_m)
+    xs_m = [v[0] for v in verts_m]
+    ys_m = [v[1] for v in verts_m]
+    min_xm, max_xm = min(xs_m), max(xs_m)
+    min_ym, max_ym = min(ys_m), max(ys_m)
+    poly_w = max_xm - min_xm
+    poly_h = max_ym - min_ym
+
+    # Площадь (Шнурок)
+    a_mm2 = 0
+    for i in range(n_v):
+        j = (i + 1) % n_v
+        a_mm2 += verts_m[i][0] * verts_m[j][1]
+        a_mm2 -= verts_m[j][0] * verts_m[i][1]
+    poly_area = abs(a_mm2) / 2.0
+
+    # Scanline: разбиваем полигон на ряды досок
+    row_segments = []  # (y_pos, x_start, x_end, seg_len)
+    y_cur = min_ym
+    while y_cur < max_ym - eff_w * 0.1:
+        segs = polygon_row_segments(verts_m, y_cur + eff_w / 2)
+        for sx, ex in segs:
+            sl = round(ex - sx, 3)
+            if sl > 0.05:
+                row_segments.append((y_cur, sx, ex, sl))
+        y_cur = round(y_cur + eff_w, 4)
+
+    if not row_segments:
+        st.error("Не удалось разбить контур на ряды. Проверьте форму.")
+        st.stop()
+
+    row_lengths_arr = [rs[3] for rs in row_segments]
+
+    # Раскладка доски
+    layout_matrix, best_joints, main_board = get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards)
+    M = main_board['length_m']
+    name = main_board['name']
+
+    flat_pieces = [p for row in layout_matrix for p in row]
+    board_totals = optimize_waste(flat_pieces, main_board)
+
+    # Лаги
+    extra_joists = len(best_joints) * 2
+    joist_lines = math.ceil(poly_w / JOIST_STEP_M) + 1 + extra_joists
+    j_m = math.ceil(joist_lines * poly_h)
+    j_total = j_m * round(PIPES_JOIST[joist_choice] * METAL_MARGIN)
+
+    # Сваи (только внутри полигона)
+    pr = math.ceil(poly_w / PILE_STEP_M) + 1
+    pc = math.ceil(poly_h / PILE_STEP_M) + 1
+    step_x_p = poly_w / (pr - 1) if pr > 1 else poly_w
+    step_y_p = poly_h / (pc - 1) if pc > 1 else poly_h
+    pile_positions = []
+    if "Грунт" in base_type:
+        for i in range(pr):
+            for j in range(pc):
+                px = min_xm + i * step_x_p
+                py = min_ym + j * step_y_p
+                if point_in_polygon(px, py, verts_m):
+                    pile_positions.append((px, py))
+    piles = len(pile_positions)
+
+    # Каркас
+    f_m = math.ceil(pc * poly_w) if frame_choice and "Грунт" in base_type else 0
+    f_total = f_m * round(PIPES_FRAME[frame_choice] * METAL_MARGIN) if frame_choice and "Грунт" in base_type else 0
+
+    # Кляймеры
+    clips_packs = math.ceil((len(row_segments) * joist_lines) / 100)
+    clips_total = clips_packs * 2200
+
+    # Работы
+    work_base = poly_area * 2400
+    work_steps = steps_m * 5200
+    work_piles = piles * 3600
+
+    # Сметы
+    mat_data = [{"Позиция": f"Доска террасная: {nm}", "Кол-во": f"{dt['qty']} шт", "Сумма": dt['sum']} for nm, dt in board_totals.items()]
+    mat_data.extend([
+        {"Позиция": f"Лага {joist_choice}", "Кол-во": f"{j_m} м.п.", "Сумма": j_total},
+        {"Позиция": "Кляймеры (уп. 100 шт)", "Кол-во": f"{clips_packs} уп.", "Сумма": clips_total},
+    ])
+    if f_total > 0:
+        mat_data.insert(len(board_totals), {"Позиция": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
+
+    work_data = [{"Позиция": "Монтаж настила", "Сумма": work_base}]
+    if steps_m > 0:
+        work_data.append({"Позиция": "Монтаж ступеней", "Сумма": work_steps})
+    if piles > 0:
+        work_data.append({"Позиция": f"Монтаж свай ({piles} шт)", "Сумма": work_piles})
+
+    grand_total = sum(d['Сумма'] for d in mat_data) + sum(d['Сумма'] for d in work_data)
+
+    # --- ЧЕРТЕЖИ ---
+    def get_poly_plot(mode):
+        fig, ax = plt.subplots(figsize=(10, 6))
+        # Контур полигона
+        poly_patch = patches.Polygon(verts_m, closed=True, fill=False, edgecolor='#333', linewidth=2)
+        ax.add_patch(poly_patch)
+
+        if mode == "board":
+            draw_w = eff_w * 0.85
+            for idx, (y_pos, x_start, x_end, seg_len) in enumerate(row_segments):
+                if idx < len(layout_matrix):
+                    x = x_start
+                    for w in layout_matrix[idx]:
+                        ax.add_patch(patches.Rectangle((x, y_pos), w, draw_w, color='#8d6e63', ec='black', lw=0.5))
+                        x += w
+            ax.text((min_xm + max_xm) / 2, min_ym - 0.5, f"Габариты: {int(poly_w*1000)} × {int(poly_h*1000)} мм | Площадь: {poly_area:.2f} м²", ha='center', fontweight='bold', fontsize=10)
+
+        elif mode == "frame":
+            abs_joints = set()
+            for jx in best_joints:
+                abs_joints.add(min_xm + jx)
+            for i in range(math.ceil(poly_w / JOIST_STEP_M) + 1):
+                cx = min_xm + min(i * JOIST_STEP_M, poly_w)
+                # Вертикальная лага — только внутри полигона
+                segs = polygon_row_segments(verts_m, (min_ym + max_ym) / 2)
+                ax.plot([cx, cx], [min_ym, max_ym], color='blue', lw=1, alpha=0.3)
+            for jx in abs_joints:
+                ax.plot([jx - 0.02, jx - 0.02], [min_ym, max_ym], color='c', lw=1.5, alpha=0.9)
+                ax.plot([jx + 0.02, jx + 0.02], [min_ym, max_ym], color='c', lw=1.5, alpha=0.9)
+            if frame_choice and "Грунт" in base_type:
+                for j in range(pc):
+                    cy = min_ym + j * step_y_p
+                    ax.plot([min_xm, max_xm], [cy, cy], color='red', lw=3)
+            ax.text((min_xm + max_xm) / 2, min_ym - 0.4, "Синим: Сетка лаг | Голубым: Парные лаги | Красным: Несущие балки", color='blue', ha='center', fontsize=10)
+
+        elif mode == "piles":
+            for px, py in pile_positions:
+                ax.add_patch(patches.Circle((px, py), 0.12, color='black'))
+            # Размеры между сваями
+            if len(pile_positions) >= 2:
+                ax.text((min_xm + max_xm) / 2, min_ym - 0.4, f"Свай: {piles} шт | Шаг: ~{int(step_x_p*1000)}×{int(step_y_p*1000)} мм", ha='center', fontsize=10)
+
+        ax.set_xlim(min_xm - 1.0, max_xm + 1.0)
+        ax.set_ylim(min_ym - 1.2, max_ym + 0.5)
+        ax.set_aspect('equal')
+        plt.axis('off')
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+        plt.close(fig)
+        buf.seek(0)
+        return buf
+
+    # --- UI вывод ---
+    st.markdown(f"<h2 style='text-align: center; color: #1b5e20;'>Итоговая стоимость: {grand_total:,.0f} руб.</h2>", unsafe_allow_html=True)
+    colA, colB = st.columns(2)
+    colA.markdown("#### 🪵 Смета материалов")
+    colA.table(mat_data)
+    colB.markdown("#### ⚒️ Смета работ")
+    colB.table(work_data)
+    st.divider()
+
+    # PDF
+    def create_poly_pdf():
+        pdf = FPDF(); pdf.add_page(); pdf.set_font('Arial', '', 12)
+        try: pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True); pdf.set_font('DejaVu', '', 12)
+        except: pass
+        pdf.cell(200, 10, txt="Смета: нестандартная терраса", ln=True, align='C')
+        pdf.cell(200, 10, txt=f"Клиент: {client_name} | Площадь: {poly_area:.2f} м²", ln=True, align='L'); pdf.ln(5)
+        pdf.set_fill_color(235, 235, 235)
+        pdf.cell(110, 10, "Материалы", 1, 0, 'L', True); pdf.cell(30, 10, "Кол-во", 1, 0, 'C', True); pdf.cell(50, 10, "Сумма", 1, 1, 'C', True)
+        for r in mat_data: pdf.cell(110, 10, str(r["Позиция"])[:45], 1); pdf.cell(30, 10, str(r["Кол-во"]), 1, 0, 'C'); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.", 1, 1, 'R')
+        pdf.ln(5); pdf.cell(140, 10, "Строительно-монтажные работы", 1, 0, 'L', True); pdf.cell(50, 10, "Сумма", 1, 1, 'C', True)
+        for r in work_data: pdf.cell(140, 10, str(r["Позиция"]), 1); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.", 1, 1, 'R')
+        pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
+        for m, t in [("board", "Настил"), ("frame", "Схема подсистемы"), ("piles", "Свайное поле")]:
+            if m == "piles" and piles == 0: continue
+            pdf.add_page(); pdf.cell(200, 10, t, ln=True, align='C'); pdf.image(get_poly_plot(m), x=15, y=30, w=180)
+        return bytes(pdf.output())
+
+    col_dl1, col_dl2, col_dl3 = st.columns([1, 2, 1])
+    with col_dl2:
+        st.download_button("📥 СКАЧАТЬ ПРОЕКТ (PDF)", data=create_poly_pdf(), file_name=f"Terrasa_{client_name}.pdf", mime="application/pdf", use_container_width=True)
+
+    st.divider()
+    st.subheader("📐 Технические схемы")
+    t1, t2, t3 = st.tabs(["Вид настила", "Металлокаркас", "Свайное поле"])
+    with t1: st.image(get_poly_plot("board"), caption="Раскладка доски внутри контура.")
+    with t2: st.image(get_poly_plot("frame"), caption="Голубые линии — парные лаги под стыки.")
+    with t3:
+        if piles > 0: st.image(get_poly_plot("piles"), caption="Сваи внутри контура.")
+        else: st.info("Основание — бетон, сваи не требуются.")
 
     st.stop()
 
