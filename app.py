@@ -8,6 +8,9 @@ from fpdf import FPDF
 import datetime
 import pandas as pd
 import re
+from streamlit_drawable_canvas import st_canvas
+from PIL import Image
+import numpy as np
 
 # --- 1. ЗАГРУЗКА БАЗЫ ИЗ GOOGLE ТАБЛИЦ ---
 @st.cache_data(ttl=300)
@@ -382,271 +385,211 @@ with st.expander("🛠️ ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (На
         frame_choice = st.selectbox("Каркас несущий:", list(PIPES_FRAME.keys())) if "Грунт" in base_type else None
 
 
-# --- НЕСТАНДАРТНЫЕ ФОРМЫ: ВЕКТОРНАЯ СИСТЕМА ВВОДА ---
+# --- НЕСТАНДАРТНЫЕ ФОРМЫ: ИНТЕРАКТИВНЫЙ КОНСТРУКТОР ---
 is_complex = shape_type in ["📐 Г-образная (Угловая)", "🔲 П-образная (С вырезом)", "✏️ Свой контур (По координатам)"]
 
 if is_complex:
     st.markdown("---")
-    st.subheader("📐 Векторная система ввода размеров")
-    
-    if shape_type == "📐 Г-образная (Угловая)":
-        st.markdown("Введите размеры всех сторон Г-образной террасы (в мм):")
-        # Г-образная: 6 сторон
-        #   A ──────────┐
-        #   │           │ B
-        #   │     ┌─────┘
-        #   │  D  │ E
-        #   │     │
-        #   └─────┘
-        #      C
-        vc1, vc2, vc3 = st.columns(3)
-        v_A = vc1.number_input("A — Длина верхняя (мм):", 500, 50000, 6000, step=100, key="v_A")
-        v_B = vc2.number_input("B — Глубина правая (мм):", 500, 50000, 3000, step=100, key="v_B")
-        v_C = vc3.number_input("C — Длина нижняя (мм):", 500, 50000, 3000, step=100, key="v_C")
-        vc4, vc5, vc6 = st.columns(3)
-        v_D = vc4.number_input("D — Глубина левая (мм):", 500, 50000, 5000, step=100, key="v_D")
-        v_E = vc5.number_input("E — Ступенька X (мм):", 500, 50000, 3000, step=100, key="v_E")
-        v_F = vc6.number_input("F — Ступенька Y (мм):", 500, 50000, 2000, step=100, key="v_F")
-        
-        # SVG превью Г-образной формы
-        svg_w, svg_h = 480, 340
-        # Масштаб: вписываем форму в svg
-        max_dim = max(v_A, v_D)
-        sc = min((svg_w - 100) / v_A, (svg_h - 100) / v_D) if max_dim > 0 else 1
-        # Координаты вершин Г-образной (по часовой стрелке от верхнего левого)
-        pts = [
-            (50, 30),                                          # 0: верхний левый
-            (50 + v_A * sc, 30),                               # 1: верхний правый
-            (50 + v_A * sc, 30 + v_B * sc),                    # 2: правый нижний угол ступеньки
-            (50 + v_C * sc, 30 + v_B * sc),                    # 3: внутренний угол ступеньки
-            (50 + v_C * sc, 30 + v_D * sc),                    # 4: нижний правый
-            (50, 30 + v_D * sc),                               # 5: нижний левый
-        ]
-        poly_str = " ".join([f"{p[0]},{p[1]}" for p in pts])
-        
-        # Метки размеров
-        def mid(p1, p2): return ((p1[0]+p2[0])/2, (p1[1]+p2[1])/2)
-        labels_svg = ""
-        # A — верхняя сторона
-        mx, my = mid(pts[0], pts[1])
-        labels_svg += f'<text x="{mx}" y="{my - 8}" text-anchor="middle" font-size="13" fill="#1b5e20" font-weight="bold">A = {v_A} мм</text>'
-        # B — правая сторона (верхняя часть)
-        mx, my = mid(pts[1], pts[2])
-        labels_svg += f'<text x="{mx + 10}" y="{my}" text-anchor="start" font-size="13" fill="#1b5e20" font-weight="bold" transform="rotate(90,{mx+10},{my})">B = {v_B}</text>'
-        # E — горизонтальная ступенька
-        mx, my = mid(pts[2], pts[3])
-        labels_svg += f'<text x="{mx}" y="{my + 18}" text-anchor="middle" font-size="13" fill="#e65100" font-weight="bold">E = {v_E} мм</text>'
-        # F — вертикальная ступенька
-        mx, my = mid(pts[3], pts[4])
-        labels_svg += f'<text x="{mx + 10}" y="{my}" text-anchor="start" font-size="13" fill="#e65100" font-weight="bold">F = {v_F}</text>'
-        # C — нижняя сторона
-        mx, my = mid(pts[4], pts[5])
-        labels_svg += f'<text x="{mx}" y="{my + 18}" text-anchor="middle" font-size="13" fill="#1b5e20" font-weight="bold">C = {v_C} мм</text>'
-        # D — левая сторона
-        mx, my = mid(pts[5], pts[0])
-        labels_svg += f'<text x="{mx - 10}" y="{my}" text-anchor="end" font-size="13" fill="#1b5e20" font-weight="bold" transform="rotate(-90,{mx-10},{my})">D = {v_D}</text>'
-        
-        svg_code = f'''<svg width="{svg_w}" height="{svg_h}" xmlns="http://www.w3.org/2000/svg">
-            <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
-            </pattern></defs>
-            <rect width="100%" height="100%" fill="url(#grid)" rx="8"/>
-            <polygon points="{poly_str}" fill="#a5d6a7" fill-opacity="0.4" stroke="#2e7d32" stroke-width="2.5"/>
-            {labels_svg}
-        </svg>'''
-        st.markdown(svg_code, unsafe_allow_html=True)
-        
-        # Обновляем length/width для совместимости с нижним кодом
-        length = v_A / 1000.0
-        width = v_D / 1000.0
-    
-    elif shape_type == "🔲 П-образная (С вырезом)":
-        st.markdown("Введите размеры всех сторон П-образной террасы (в мм):")
-        # П-образная: 8 сторон
-        #   A ───────────────────────┐
-        #   │                        │ B
-        #   │    ┌───── E ──────┐    │
-        #   │  F │              │ F  │
-        #   │    │    ВЫРЕЗ     │    │
-        #   │    └──────────────┘    │
-        #   │                        │
-        #   └────────── A ──────────┘
-        vc1, vc2 = st.columns(2)
-        vp_A = vc1.number_input("A — Общая длина (мм):", 1000, 50000, 8000, step=100, key="vp_A")
-        vp_B = vc2.number_input("B — Общая глубина (мм):", 1000, 50000, 5000, step=100, key="vp_B")
-        vc3, vc4 = st.columns(2)
-        vp_E = vc3.number_input("E — Ширина выреза (мм):", 500, 50000, 4000, step=100, key="vp_E")
-        vp_F = vc4.number_input("F — Глубина выреза (мм):", 500, 50000, 3000, step=100, key="vp_F")
-        
-        # Боковые «крылья»
-        wing = (vp_A - vp_E) / 2.0
-        
-        # SVG превью П-образной формы
-        svg_w, svg_h = 480, 340
-        sc = min((svg_w - 100) / vp_A, (svg_h - 100) / vp_B) if max(vp_A, vp_B) > 0 else 1
-        ox, oy = 50, 30
-        pts = [
-            (ox, oy),                                             # 0: верхний левый
-            (ox + vp_A * sc, oy),                                 # 1: верхний правый
-            (ox + vp_A * sc, oy + vp_B * sc),                     # 2: нижний правый
-            (ox + (vp_A + vp_E) / 2 * sc, oy + vp_B * sc),       # 3: вырез правый низ
-            (ox + (vp_A + vp_E) / 2 * sc, oy + (vp_B - vp_F) * sc),  # 4: вырез правый верх
-            (ox + (vp_A - vp_E) / 2 * sc, oy + (vp_B - vp_F) * sc),  # 5: вырез левый верх
-            (ox + (vp_A - vp_E) / 2 * sc, oy + vp_B * sc),       # 6: вырез левый низ
-            (ox, oy + vp_B * sc),                                 # 7: нижний левый
-        ]
-        poly_str = " ".join([f"{p[0]},{p[1]}" for p in pts])
-        
-        def mid(p1, p2): return ((p1[0]+p2[0])/2, (p1[1]+p2[1])/2)
-        labels_svg = ""
-        # A — верхняя
-        mx, my = mid(pts[0], pts[1])
-        labels_svg += f'<text x="{mx}" y="{my - 8}" text-anchor="middle" font-size="13" fill="#1b5e20" font-weight="bold">A = {vp_A} мм</text>'
-        # B — правая
-        mx, my = mid(pts[1], pts[2])
-        labels_svg += f'<text x="{mx + 10}" y="{my}" text-anchor="start" font-size="13" fill="#1b5e20" font-weight="bold">B = {vp_B}</text>'
-        # E — ширина выреза
-        mx, my = mid(pts[4], pts[5])
-        labels_svg += f'<text x="{mx}" y="{my - 5}" text-anchor="middle" font-size="13" fill="#e65100" font-weight="bold">E = {vp_E} мм</text>'
-        # F — глубина выреза
-        mx, my = mid(pts[3], pts[4])
-        labels_svg += f'<text x="{mx + 8}" y="{my}" text-anchor="start" font-size="12" fill="#e65100" font-weight="bold">F = {vp_F}</text>'
-        # Крыло
-        if wing > 0:
-            mx_w = (pts[6][0] + pts[7][0]) / 2
-            labels_svg += f'<text x="{mx_w}" y="{pts[7][1] + 16}" text-anchor="middle" font-size="11" fill="#555">крыло: {int(wing)} мм</text>'
-            mx_w2 = (pts[2][0] + pts[3][0]) / 2
-            labels_svg += f'<text x="{mx_w2}" y="{pts[2][1] + 16}" text-anchor="middle" font-size="11" fill="#555">крыло: {int(wing)} мм</text>'
-        
-        # Штриховка выреза
-        cx1, cy1 = pts[5]
-        cx2, cy2 = pts[3][0], pts[3][1]
-        hatch_svg = ""
-        step_h = 12
-        y_start = cy1
-        while y_start < cy2:
-            hatch_svg += f'<line x1="{cx1}" y1="{y_start}" x2="{cx2}" y2="{y_start}" stroke="#bbb" stroke-width="0.5" stroke-dasharray="4,4"/>'
-            y_start += step_h
-        
-        svg_code = f'''<svg width="{svg_w}" height="{svg_h}" xmlns="http://www.w3.org/2000/svg">
-            <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
-            </pattern></defs>
-            <rect width="100%" height="100%" fill="url(#grid)" rx="8"/>
-            <polygon points="{poly_str}" fill="#a5d6a7" fill-opacity="0.4" stroke="#2e7d32" stroke-width="2.5"/>
-            {hatch_svg}
-            <text x="{(cx1+cx2)/2}" y="{(cy1+cy2)/2 + 4}" text-anchor="middle" font-size="12" fill="#999" font-style="italic">вырез</text>
-            {labels_svg}
-        </svg>'''
-        st.markdown(svg_code, unsafe_allow_html=True)
-        
-        length = vp_A / 1000.0
-        width = vp_B / 1000.0
-    
-    elif shape_type == "✏️ Свой контур (По координатам)":
-        st.markdown("Введите координаты вершин террасы (в мм). Точки соединяются последовательно, контур замыкается автоматически.")
-        
-        # Начальные координаты по умолчанию (прямоугольник)
-        default_points = [
-            {"Точка": "1", "X (мм)": 0, "Y (мм)": 0},
-            {"Точка": "2", "X (мм)": 0, "Y (мм)": 5000},
-            {"Точка": "3", "X (мм)": 8000, "Y (мм)": 5000},
-            {"Точка": "4", "X (мм)": 8000, "Y (мм)": 0},
-        ]
-        df_coords = pd.DataFrame(default_points)
-        edited_df = st.data_editor(
-            df_coords, num_rows="dynamic", use_container_width=True,
-            column_config={
-                "Точка": st.column_config.TextColumn("#", width="small"),
-                "X (мм)": st.column_config.NumberColumn("X (мм)", min_value=-50000, max_value=50000, step=100),
-                "Y (мм)": st.column_config.NumberColumn("Y (мм)", min_value=-50000, max_value=50000, step=100),
-            },
-            key="coord_editor"
-        )
-        
-        # SVG превью произвольного контура
-        xs = edited_df["X (мм)"].tolist()
-        ys = edited_df["Y (мм)"].tolist()
-        if len(xs) >= 3:
-            min_x, max_x = min(xs), max(xs)
-            min_y, max_y = min(ys), max(ys)
-            range_x = max_x - min_x if max_x > min_x else 1
-            range_y = max_y - min_y if max_y > min_y else 1
-            svg_w, svg_h = 480, 340
-            pad = 60
-            sc = min((svg_w - 2 * pad) / range_x, (svg_h - 2 * pad) / range_y)
-            # Трансформируем: SVG Y вниз
-            svg_pts = []
-            for px, py in zip(xs, ys):
-                sx = pad + (px - min_x) * sc
-                sy = pad + (max_y - py) * sc  # flip Y
-                svg_pts.append((sx, sy))
-            
-            poly_str = " ".join([f"{p[0]:.1f},{p[1]:.1f}" for p in svg_pts])
-            
-            # Подписи сторон
-            labels_svg = ""
-            n = len(svg_pts)
-            for i in range(n):
-                p1 = svg_pts[i]
-                p2 = svg_pts[(i + 1) % n]
-                # Длина стороны в мм
-                dx = xs[(i + 1) % n] - xs[i]
-                dy = ys[(i + 1) % n] - ys[i]
-                side_len = int(round((dx**2 + dy**2) ** 0.5))
-                mx = (p1[0] + p2[0]) / 2
-                my_l = (p1[1] + p2[1]) / 2
-                # Нормаль наружу для смещения подписи
-                nx_d = -(p2[1] - p1[1])
-                ny_d = (p2[0] - p1[0])
-                nd = (nx_d**2 + ny_d**2) ** 0.5 if (nx_d**2 + ny_d**2) > 0 else 1
-                off = 14
-                labels_svg += f'<text x="{mx + nx_d/nd * off:.1f}" y="{my_l + ny_d/nd * off:.1f}" text-anchor="middle" font-size="11" fill="#1b5e20" font-weight="bold">{side_len}</text>'
-                # Вершина — маркер
-                labels_svg += f'<circle cx="{p1[0]:.1f}" cy="{p1[1]:.1f}" r="4" fill="#2e7d32"/>'
-                labels_svg += f'<text x="{p1[0]:.1f}" y="{p1[1] - 8:.1f}" text-anchor="middle" font-size="10" fill="#333">{i+1}</text>'
-            
-            svg_code = f'''<svg width="{svg_w}" height="{svg_h}" xmlns="http://www.w3.org/2000/svg">
-                <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
-                </pattern></defs>
-                <rect width="100%" height="100%" fill="url(#grid)" rx="8"/>
-                <polygon points="{poly_str}" fill="#a5d6a7" fill-opacity="0.3" stroke="#2e7d32" stroke-width="2.5"/>
-                {labels_svg}
-            </svg>'''
-            st.markdown(svg_code, unsafe_allow_html=True)
-            
-            length = range_x / 1000.0
-            width = range_y / 1000.0
+    st.subheader("📐 Конструктор нестандартной террасы")
+
+    # --- Панель управления холстом ---
+    ctrl1, ctrl2 = st.columns([3, 1])
+    with ctrl2:
+        scale_label = st.selectbox("Масштаб:", ["Мелкий (до 7м)", "Средний (до 14м)", "Крупный (до 28м)"], index=1)
+        mm_per_cell = {"Мелкий (до 7м)": 200, "Средний (до 14м)": 500, "Крупный (до 28м)": 1000}[scale_label]
+        draw_label = st.radio("Режим:", ["✏️ Рисовать", "↔️ Двигать"], horizontal=True)
+        drawing_mode = "polygon" if "Рисовать" in draw_label else "transform"
+
+    canvas_w, canvas_h = 700, 450
+    grid_px = 25
+    mm_per_px = mm_per_cell / grid_px
+
+    with ctrl1:
+        if "Рисовать" in draw_label:
+            st.info("🖱️ **Кликайте** по сетке, чтобы расставить вершины террасы. **Двойной клик** — замкнуть контур.")
         else:
-            st.warning("Нужно минимум 3 точки для построения контура.")
-            length = 1.0; width = 1.0
-    
-    # Кнопка расчёта для нестандартных форм
+            st.info("🖱️ **Перетаскивайте** фигуру для настройки. Переключите на ✏️ для рисования новой.")
+        st.caption(f"📏 1 клетка = {mm_per_cell} мм ({mm_per_cell/1000:.1f} м) | Область: {canvas_w * mm_per_px / 1000:.0f} × {canvas_h * mm_per_px / 1000:.0f} м")
+
+    # --- Фон с сеткой ---
+    bg = np.ones((canvas_h, canvas_w, 3), dtype=np.uint8) * 252
+    for x in range(0, canvas_w, grid_px):
+        bg[:, min(x, canvas_w - 1), :] = [220, 220, 220]
+    for y in range(0, canvas_h, grid_px):
+        bg[min(y, canvas_h - 1), :, :] = [220, 220, 220]
+    for x in range(0, canvas_w, grid_px * 4):
+        bg[:, min(x, canvas_w - 1), :] = [185, 185, 185]
+    for y in range(0, canvas_h, grid_px * 4):
+        bg[min(y, canvas_h - 1), :, :] = [185, 185, 185]
+    bg_image = Image.fromarray(bg)
+
+    # --- Предустановленные шаблоны для Г и П ---
+    initial_drawing = None
+    s = 1.0 / mm_per_px  # mm → px
+    ox, oy = 2 * grid_px, 2 * grid_px
+
+    if shape_type == "📐 Г-образная (Угловая)":
+        pts = [(ox, oy), (ox + 6000 * s, oy), (ox + 6000 * s, oy + 3000 * s),
+               (ox + 3000 * s, oy + 3000 * s), (ox + 3000 * s, oy + 5000 * s), (ox, oy + 5000 * s)]
+        path = [["M", pts[0][0], pts[0][1]]]
+        for p in pts[1:]:
+            path.append(["L", p[0], p[1]])
+        path.append(["z"])
+        initial_drawing = {"version": "4.4.0", "objects": [{"type": "path", "version": "4.4.0",
+            "left": 0, "top": 0, "fill": "rgba(165,214,167,0.3)", "stroke": "#2e7d32",
+            "strokeWidth": 2, "path": path}]}
+
+    elif shape_type == "🔲 П-образная (С вырезом)":
+        A, B, E, F = 8000, 5000, 4000, 3000
+        pts = [(ox, oy), (ox + A * s, oy), (ox + A * s, oy + B * s),
+               (ox + (A + E) / 2 * s, oy + B * s), (ox + (A + E) / 2 * s, oy + (B - F) * s),
+               (ox + (A - E) / 2 * s, oy + (B - F) * s), (ox + (A - E) / 2 * s, oy + B * s),
+               (ox, oy + B * s)]
+        path = [["M", pts[0][0], pts[0][1]]]
+        for p in pts[1:]:
+            path.append(["L", p[0], p[1]])
+        path.append(["z"])
+        initial_drawing = {"version": "4.4.0", "objects": [{"type": "path", "version": "4.4.0",
+            "left": 0, "top": 0, "fill": "rgba(165,214,167,0.3)", "stroke": "#2e7d32",
+            "strokeWidth": 2, "path": path}]}
+
+    # --- Холст для рисования ---
+    canvas_result = st_canvas(
+        fill_color="rgba(165, 214, 167, 0.3)",
+        stroke_width=2,
+        stroke_color="#2e7d32",
+        background_image=bg_image,
+        drawing_mode=drawing_mode,
+        point_display_radius=6,
+        width=canvas_w,
+        height=canvas_h,
+        initial_drawing=initial_drawing,
+        key=f"canvas_{shape_type}_{mm_per_cell}",
+    )
+
+    # --- Извлечение вершин из нарисованного полигона ---
+    vertices_mm = []
+    if canvas_result.json_data is not None:
+        objects = canvas_result.json_data.get("objects", [])
+        for obj in objects:
+            if "path" in obj:
+                left = obj.get("left", 0)
+                top = obj.get("top", 0)
+                scaleX = obj.get("scaleX", 1)
+                scaleY = obj.get("scaleY", 1)
+                verts = []
+                for cmd in obj["path"]:
+                    if len(cmd) >= 3 and cmd[0] in ["M", "L"]:
+                        raw_x = cmd[1] * scaleX + left
+                        raw_y = cmd[2] * scaleY + top
+                        gx = round(raw_x / grid_px) * grid_px
+                        gy = round(raw_y / grid_px) * grid_px
+                        mm_x = int(round(gx * mm_per_px))
+                        mm_y = int(round(gy * mm_per_px))
+                        if not verts or (mm_x, mm_y) != verts[-1]:
+                            verts.append((mm_x, mm_y))
+                if len(verts) > 1 and verts[0] == verts[-1]:
+                    verts.pop()
+                if len(verts) >= 3:
+                    vertices_mm = verts
+
+    if len(vertices_mm) >= 3:
+        n = len(vertices_mm)
+
+        # Длины сторон
+        sides_mm = []
+        for i in range(n):
+            p1, p2 = vertices_mm[i], vertices_mm[(i + 1) % n]
+            dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+            sides_mm.append(int(round((dx ** 2 + dy ** 2) ** 0.5)))
+
+        # Габариты
+        xs = [v[0] for v in vertices_mm]
+        ys = [v[1] for v in vertices_mm]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        range_x = max(max_x - min_x, 1)
+        range_y = max(max_y - min_y, 1)
+
+        # Площадь (формула Шнурка)
+        area_mm2 = 0
+        for i in range(n):
+            j = (i + 1) % n
+            area_mm2 += vertices_mm[i][0] * vertices_mm[j][1]
+            area_mm2 -= vertices_mm[j][0] * vertices_mm[i][1]
+        area_m2 = abs(area_mm2) / 2_000_000
+
+        # --- SVG чертёж с размерами ---
+        svg_w, svg_h = 650, 400
+        pad = 65
+        sc_svg = min((svg_w - 2 * pad) / range_x, (svg_h - 2 * pad) / range_y)
+        svg_pts = [(pad + (vx - min_x) * sc_svg, pad + (vy - min_y) * sc_svg) for vx, vy in vertices_mm]
+        poly_str = " ".join([f"{p[0]:.1f},{p[1]:.1f}" for p in svg_pts])
+
+        labels = ""
+        for i in range(n):
+            p1, p2 = svg_pts[i], svg_pts[(i + 1) % n]
+            mx_l, my_l = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
+            nx_d, ny_d = -(p2[1] - p1[1]), p2[0] - p1[0]
+            nd = max((nx_d ** 2 + ny_d ** 2) ** 0.5, 0.001)
+            off = 18
+            labels += f'<text x="{mx_l + nx_d / nd * off:.1f}" y="{my_l + ny_d / nd * off:.1f}" '
+            labels += f'text-anchor="middle" font-size="12" fill="#1b5e20" font-weight="bold">{sides_mm[i]} мм</text>'
+            labels += f'<circle cx="{p1[0]:.1f}" cy="{p1[1]:.1f}" r="5" fill="#2e7d32" stroke="white" stroke-width="1.5"/>'
+            labels += f'<text x="{p1[0]:.1f}" y="{p1[1] - 10:.1f}" text-anchor="middle" font-size="10" fill="#444" font-weight="bold">{i + 1}</text>'
+
+        svg_code = f'''<svg width="{svg_w}" height="{svg_h}" xmlns="http://www.w3.org/2000/svg">
+            <defs><pattern id="g2" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#eee" stroke-width="0.5"/></pattern></defs>
+            <rect width="100%" height="100%" fill="url(#g2)" rx="8"/>
+            <polygon points="{poly_str}" fill="#a5d6a7" fill-opacity="0.35" stroke="#2e7d32" stroke-width="2.5" stroke-linejoin="round"/>
+            {labels}
+            <text x="{svg_w / 2}" y="{svg_h - 12}" text-anchor="middle" font-size="13" fill="#555">
+                Площадь: {area_m2:.2f} м² | Габариты: {range_x} × {range_y} мм | Вершин: {n}
+            </text>
+        </svg>'''
+
+        st.markdown("### 📏 Чертёж с размерами")
+        st.markdown(svg_code, unsafe_allow_html=True)
+
+        with st.expander("📋 Таблица сторон", expanded=False):
+            side_data = [{"Сторона": f"{i + 1} → {(i + 1) % n + 1}", "Длина (мм)": sides_mm[i],
+                          "Вершина": f"({vertices_mm[i][0]}, {vertices_mm[i][1]})"} for i in range(n)]
+            st.dataframe(pd.DataFrame(side_data), use_container_width=True, hide_index=True)
+
+        length = range_x / 1000.0
+        width = range_y / 1000.0
+    else:
+        st.markdown("<div style='text-align:center; padding: 1rem; color: #888; font-size: 1.1rem;'>" +
+                    "👆 Нарисуйте контур террасы на холсте выше</div>", unsafe_allow_html=True)
+        length = 1.0
+        width = 1.0
+
+    # --- Кнопка расчёта ---
     st.markdown("---")
-    calc_col1, calc_col2, calc_col3 = st.columns([1, 2, 1])
-    with calc_col2:
+    c_b1, c_b2, c_b3 = st.columns([1, 2, 1])
+    with c_b2:
         calc_pressed = st.button("🔢 РАССЧИТАТЬ НЕСТАНДАРТНУЮ ТЕРРАСУ", use_container_width=True, type="primary")
-    
-    if calc_pressed:
-        st.success("✅ Параметры приняты! Расчётный модуль для нестандартных форм будет подключен на следующем этапе.")
-        # Покажем сводную информацию по введённым данным
-        info_col1, info_col2 = st.columns(2)
-        with info_col1:
-            st.markdown("#### 📋 Принятые параметры")
-            st.markdown(f"- **Конфигурация:** {shape_type}")
-            st.markdown(f"- **Габариты:** {int(length*1000)} × {int(width*1000)} мм")
+
+    if calc_pressed and len(vertices_mm) >= 3:
+        st.success(f"✅ Контур принят: {n} вершин, площадь {area_m2:.2f} м²")
+        info1, info2 = st.columns(2)
+        with info1:
+            st.markdown("#### 📋 Параметры")
+            st.markdown(f"- **Форма:** {shape_type}")
+            st.markdown(f"- **Площадь:** {area_m2:.2f} м²")
+            st.markdown(f"- **Габариты:** {range_x} × {range_y} мм")
             st.markdown(f"- **Материал:** {brand_choice} — {collection_name}")
             st.markdown(f"- **Основание:** {base_type}")
-        with info_col2:
-            st.markdown("#### 🚧 Ожидает реализации")
+        with info2:
+            st.markdown("#### 🚧 Следующий этап")
             st.markdown("- Раскладка террасной доски")
             st.markdown("- Схема свайного поля")
             st.markdown("- Металлокаркас")
             st.markdown("- Смета материалов и работ")
-    else:
-        st.info("👆 Заполните все размеры и нажмите кнопку для расчёта.")
-    
+    elif calc_pressed:
+        st.warning("⚠️ Сначала нарисуйте контур террасы на холсте!")
+
     st.stop()
 
 # Блокировка округлой формы и бассейна
