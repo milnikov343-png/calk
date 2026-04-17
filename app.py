@@ -1,10 +1,26 @@
 import streamlit as st
+import base64
+import os
 
 st.set_page_config(
     page_title="OOO Дача 2000 | Умный Калькулятор",
     page_icon="🏗️",
     layout="centered"
 )
+
+# Функция для конвертации картинки в base64
+def get_image_base64(path):
+    if os.path.exists(path):
+        with open(path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode()
+    return ""
+
+# Пути к картинкам
+terrace_img_path = os.path.join(os.path.dirname(__file__), "terrace_thumb.png")
+fence_img_path = os.path.join(os.path.dirname(__file__), "fence_thumb.png")
+
+terrace_b64 = get_image_base64(terrace_img_path)
+fence_b64 = get_image_base64(fence_img_path)
 
 # --- Эстетика стартовой страницы ---
 st.markdown("""
@@ -39,17 +55,29 @@ html, body, [class*="css"] {
     font-weight: 400;
 }
 
+/* Контейнеры колонок */
+div[data-testid="column"] {
+    display: flex;
+    flex-direction: column;
+}
+
 /* Карточки действий */
 .action-card {
     background: rgba(30, 41, 59, 0.7);
     border: 1px solid rgba(16, 185, 129, 0.2);
     border-radius: 16px;
-    padding: 2rem;
+    padding: 1.5rem;
     text-align: center;
     transition: all 0.3s ease;
     box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
     backdrop-filter: blur(10px);
+    
+    /* Flexbox для одинаковой высоты */
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    height: 100%;
 }
 .action-card:hover {
     transform: translateY(-5px);
@@ -57,9 +85,13 @@ html, body, [class*="css"] {
     box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2);
     background: rgba(30, 41, 59, 0.9);
 }
-.card-icon {
-    font-size: 4rem;
-    margin-bottom: 1rem;
+.card-image {
+    width: 100%;
+    height: 220px;
+    object-fit: cover;
+    border-radius: 12px;
+    margin-bottom: 1.2rem;
+    border: 1px solid rgba(255,255,255,0.05);
 }
 .card-title {
     font-size: 1.5rem;
@@ -72,11 +104,15 @@ html, body, [class*="css"] {
     font-size: 0.95rem;
     line-height: 1.5;
     margin-bottom: 1.5rem;
+    flex-grow: 1; /* Описание занимает всё свободное место, выравнивая низ */
 }
 
 /* Скрываем боковую панель на главной (чтобы было похоже на лендинг) */
 [data-testid="collapsedControl"] {
     display: none;
+}
+section[data-testid="stSidebar"] { 
+    display: none !important; 
 }
 </style>
 """, unsafe_allow_html=True)
@@ -87,26 +123,17 @@ st.markdown("""
     <h1>ООО "Дача 2000"</h1>
     <p>Рабочая панель строительных калькуляторов</p>
 </div>
+<br>
 """, unsafe_allow_html=True)
-
-# Спрятать боковое меню на стартовой странице:
-st.markdown(
-    """
-    <style>
-        section[data-testid="stSidebar"] { display: none !important; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-st.markdown("<br>", unsafe_allow_html=True)
 
 col1, col2 = st.columns(2, gap="large")
 
 with col1:
-    st.markdown("""
+    img_tag_1 = f'<img src="data:image/png;base64,{terrace_b64}" class="card-image">' if terrace_b64 else '<div class="card-image" style="background:#333; display:flex; align-items:center; justify-content:center; font-size:3rem;">🏗️</div>'
+    
+    st.markdown(f"""
     <div class="action-card">
-        <div class="card-icon">🏗️</div>
+        {img_tag_1}
         <div class="card-title">Расчёт Террас</div>
         <div class="card-desc">
             Визуальный расчёт прямых, угловых и П-образных террас.
@@ -118,9 +145,11 @@ with col1:
         st.switch_page("pages/terrace_calculator.py")
 
 with col2:
-    st.markdown("""
+    img_tag_2 = f'<img src="data:image/png;base64,{fence_b64}" class="card-image">' if fence_b64 else '<div class="card-image" style="background:#333; display:flex; align-items:center; justify-content:center; font-size:3rem;">🧱</div>'
+    
+    st.markdown(f"""
     <div class="action-card">
-        <div class="card-icon">🧱</div>
+        {img_tag_2}
         <div class="card-title">Расчёт Заборов</div>
         <div class="card-desc">
             Профлист, штакет, шахматка. Автоматический расчёт
