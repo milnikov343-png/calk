@@ -1,7 +1,6 @@
-streamlit
-matplotlib
-fpdf2
-requests
-beautifulsoup4
-pandas
-streamlit-drawable-canvas
+streamlit>=1.33.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+streamlit-drawable-canvas>=0.9.3
+fpdf2>=2.7.5
+openpyxl>=3.1.2
