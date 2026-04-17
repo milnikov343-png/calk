@@ -9,8 +9,6 @@ import datetime
 import pandas as pd
 import re
 from streamlit_drawable_canvas import st_canvas
-from PIL import Image
-import numpy as np
 
 # --- 1. ЗАГРУЗКА БАЗЫ ИЗ GOOGLE ТАБЛИЦ ---
 @st.cache_data(ttl=300)
@@ -411,17 +409,7 @@ if is_complex:
             st.info("🖱️ **Перетаскивайте** фигуру для настройки. Переключите на ✏️ для рисования новой.")
         st.caption(f"📏 1 клетка = {mm_per_cell} мм ({mm_per_cell/1000:.1f} м) | Область: {canvas_w * mm_per_px / 1000:.0f} × {canvas_h * mm_per_px / 1000:.0f} м")
 
-    # --- Фон с сеткой ---
-    bg = np.ones((canvas_h, canvas_w, 3), dtype=np.uint8) * 252
-    for x in range(0, canvas_w, grid_px):
-        bg[:, min(x, canvas_w - 1), :] = [220, 220, 220]
-    for y in range(0, canvas_h, grid_px):
-        bg[min(y, canvas_h - 1), :, :] = [220, 220, 220]
-    for x in range(0, canvas_w, grid_px * 4):
-        bg[:, min(x, canvas_w - 1), :] = [185, 185, 185]
-    for y in range(0, canvas_h, grid_px * 4):
-        bg[min(y, canvas_h - 1), :, :] = [185, 185, 185]
-    bg_image = Image.fromarray(bg)
+    # --- Фон холста ---
 
     # --- Предустановленные шаблоны для Г и П ---
     initial_drawing = None
@@ -458,7 +446,7 @@ if is_complex:
         fill_color="rgba(165, 214, 167, 0.3)",
         stroke_width=2,
         stroke_color="#2e7d32",
-        background_image=bg_image,
+        background_color="#f8f8f8",
         drawing_mode=drawing_mode,
         point_display_radius=6,
         width=canvas_w,
