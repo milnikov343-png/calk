@@ -867,7 +867,8 @@ if is_complex:
     # PDF
     def create_poly_pdf():
         pdf = FPDF(); pdf.add_page(); pdf.set_font('Arial', '', 12)
-        try: pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True); pdf.set_font('DejaVu', '', 12)
+        font_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "DejaVuSans.ttf")
+        try: pdf.add_font('DejaVu', '', font_path); pdf.set_font('DejaVu', '', 12)
         except: pass
         pdf.cell(200, 10, txt="Смета: нестандартная терраса", ln=True, align='C')
         pdf.cell(200, 10, txt=f"Клиент: {client_name} | Площадь: {poly_area:.2f} м²", ln=True, align='L'); pdf.ln(5)
@@ -1060,7 +1061,8 @@ def get_plot(mode):
 # --- 6. ГЕНЕРАЦИЯ PDF ---
 def create_pdf():
     pdf = FPDF(); pdf.add_page(); pdf.set_font('Arial', '', 12)
-    try: pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True); pdf.set_font('DejaVu', '', 12)
+    font_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "DejaVuSans.ttf")
+    try: pdf.add_font('DejaVu', '', font_path); pdf.set_font('DejaVu', '', 12)
     except: pass
     pdf.cell(200, 10, txt="Смета и чертежи на устройство террасы", ln=True, align='C')
     pdf.cell(200, 10, txt=f"Клиент: {client_name} | Габариты: {int(length*1000)}x{int(width*1000)} мм", ln=True, align='L'); pdf.ln(5)
