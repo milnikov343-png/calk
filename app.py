@@ -287,59 +287,142 @@ st.set_page_config(page_title="Дача 2000 | Умный Калькулятор
 
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+/* Скрываем сайдбар */
 [data-testid="collapsedControl"] { display: none; }
 section[data-testid="stSidebar"] { display: none; }
-/* Делаем липкой только самую первую полосу (с логотипом и названием) */
+
+/* Основной фон */
+.stApp {
+    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 40%, #16213e 100%);
+}
+
+/* Шрифт */
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
+
+/* Заголовок-шапка */
+.header-bar {
+    background: linear-gradient(135deg, rgba(30, 60, 90, 0.95), rgba(20, 40, 70, 0.95));
+    backdrop-filter: blur(12px);
+    border-bottom: 2px solid #00b894;
+    padding: 0.7rem 1.5rem;
+    border-radius: 0 0 16px 16px;
+    box-shadow: 0 4px 20px rgba(0, 184, 148, 0.15);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* Делаем её прилипающей вместо стандартного блока */
 div[data-testid="stVerticalBlock"] > div:first-of-type {
     position: sticky;
     top: 0px;
     z-index: 999;
-    background-color: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(8px);
-    padding: 0.5rem 1rem 0.5rem 1rem;
-    border-bottom: 2px solid #4CAF50;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
-    margin-bottom: 0.5rem;
 }
-@media (prefers-color-scheme: dark) {
-    div[data-testid="stVerticalBlock"] > div:first-of-type {
-        background-color: rgba(14, 17, 23, 0.95);
-        border-bottom: 2px solid #2E7D32;
-    }
+
+/* Карточки метрик */
+.metric-card {
+    background: linear-gradient(135deg, rgba(30, 50, 80, 0.8), rgba(20, 35, 60, 0.9));
+    border: 1px solid rgba(0, 184, 148, 0.3);
+    border-radius: 16px;
+    padding: 1.2rem 1.5rem;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
 }
-/* Компактные поля ввода */
-div[data-baseweb="input"] { font-size: 14px; }
-div[data-testid="stNumberInput"] label p, div[data-testid="stSelectbox"] label p, div[data-testid="stRadio"] label p {
-    font-size: 14px !important;
+.metric-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(0, 184, 148, 0.6);
+    box-shadow: 0 8px 30px rgba(0, 184, 148, 0.2);
+}
+.metric-card .label {
+    color: #8899aa;
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 0.4rem;
+}
+.metric-card .value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #00b894, #00cec9);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.metric-card .value.orange {
+    background: linear-gradient(135deg, #fdcb6e, #e17055);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.metric-card .value.blue {
+    background: linear-gradient(135deg, #74b9ff, #0984e3);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.metric-card .value.total {
+    font-size: 2.2rem;
+    background: linear-gradient(135deg, #ffeaa7, #fdcb6e, #e17055);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Фикс стилей инпутов */
+div[data-testid="stNumberInput"] label p,
+div[data-testid="stSelectbox"] label p,
+div[data-testid="stRadio"] label p,
+div[data-testid="stCheckbox"] label p,
+div[data-testid="stTextInput"] label p {
+    font-size: 13px !important;
     font-weight: 500 !important;
-    color: #444;
+    color: #b0bec5 !important;
 }
-@media (prefers-color-scheme: dark) {
-    div[data-testid="stNumberInput"] label p, div[data-testid="stSelectbox"] label p, div[data-testid="stRadio"] label p { color: #ccc; }
-}
-/* Кастомный стиль для заголовков экспандера */
-button[data-testid="stExpanderToggleIcon"] { display: none !important; }
+
+/* Экспандеры */
 div[data-testid="stExpander"] details summary p {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     font-weight: 700;
-    color: #2E7D32;
+    color: #00b894;
 }
-@media (prefers-color-scheme: dark) {
-    div[data-testid="stExpander"] details summary p { color: #4CAF50; }
+
+/* Таблица */
+.stDataFrame, table {
+    border-radius: 12px !important;
+    overflow: hidden;
+}
+
+/* Вкладки */
+div[data-testid="stTabs"] button {
+    color: #8899aa !important;
+    font-weight: 600 !important;
+}
+div[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #00b894 !important;
+    border-bottom-color: #00b894 !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
 with st.container():
-    # Используем более гармоничные пропорции для логотипа
     col_logo, col_title, col_btn = st.columns([1.5, 7, 1.5], gap="small")
     with col_logo:
         try:
-            st.image("logo.png", width=180)
+            st.image("logo.png", width=160)
         except:
-            st.markdown("<h3 style='color:#2E7D32; margin:0;'>Дача 2000</h3>", unsafe_allow_html=True)
+            st.markdown("<h3 style='color:#00b894; margin:0;'>Дача 2000</h3>", unsafe_allow_html=True)
     with col_title:
-        st.markdown("<h2 style='margin:0; padding-top:10px; font-weight:800; color: #333;'>Профессиональный проект террасы</h2>", unsafe_allow_html=True)
+        st.markdown("""
+        <div>
+            <h2 style='margin:0; padding-top:8px; font-weight:800; color: #e0e0e0;'>
+                🏗️ Умный Калькулятор Террас
+            </h2>
+            <span style='color: #00b894; font-size: 0.9rem;'>ООО "Дача 2000" — Профессиональный расчёт стоимости</span>
+        </div>
+        """, unsafe_allow_html=True)
     with col_btn:
         st.markdown("<div style='padding-top:10px;'></div>", unsafe_allow_html=True)
         if st.button("🔄 Обновить прайс", use_container_width=True):
@@ -739,7 +822,40 @@ if is_complex:
         return buf
 
     # --- UI вывод ---
-    st.markdown(f"<h2 style='text-align: center; color: #1b5e20;'>Итоговая стоимость: {grand_total:,.0f} руб.</h2>", unsafe_allow_html=True)
+    st.markdown("---")
+    m1, m2, m3, m4 = st.columns(4)
+    total_mat = sum(d['Сумма'] for d in mat_data)
+    total_work = sum(d['Сумма'] for d in work_data)
+    with m1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="label">Стоимость работ</div>
+            <div class="value blue">{total_work:,.0f} ₽</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="label">Стоимость материалов</div>
+            <div class="value orange">{total_mat:,.0f} ₽</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="label">Площадь</div>
+            <div class="value">{poly_area:.1f} м²</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="label">Итого</div>
+            <div class="value total">{grand_total:,.0f} ₽</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
     colA, colB = st.columns(2)
     colA.markdown("#### 🪵 Смета материалов")
     colA.table(mat_data)
@@ -961,9 +1077,45 @@ def create_pdf():
     return bytes(pdf.output())
 
 # --- 7. UI ---
-st.markdown(f"<h2 style='text-align: center; color: #1b5e20;'>Итоговая стоимость: {grand_total:,.0f} руб.</h2>", unsafe_allow_html=True)
-colA, colB = st.columns(2); colA.markdown("#### 🪵 Смета материалов"); colA.table(mat_data)
-colB.markdown("#### ⚒️ Смета работ"); colB.table(work_data); st.divider()
+st.markdown("---")
+m1, m2, m3, m4 = st.columns(4)
+total_mat = sum(d['Сумма'] for d in mat_data)
+total_work = sum(d['Сумма'] for d in work_data)
+with m1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="label">Стоимость работ</div>
+        <div class="value blue">{total_work:,.0f} ₽</div>
+    </div>
+    """, unsafe_allow_html=True)
+with m2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="label">Стоимость материалов</div>
+        <div class="value orange">{total_mat:,.0f} ₽</div>
+    </div>
+    """, unsafe_allow_html=True)
+with m3:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="label">Площадь</div>
+        <div class="value">{area:.1f} м²</div>
+    </div>
+    """, unsafe_allow_html=True)
+with m4:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="label">Итого</div>
+        <div class="value total">{grand_total:,.0f} ₽</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+colA, colB = st.columns(2)
+colA.markdown("#### 🪵 Смета материалов")
+colA.table(mat_data)
+colB.markdown("#### ⚒️ Смета работ")
+colB.table(work_data)
 col_dl1, col_dl2, col_dl3 = st.columns([1, 2, 1])
 with col_dl2: st.download_button("📥 СКАЧАТЬ ПОЛНЫЙ ПРОЕКТ (PDF)", data=create_pdf(), file_name=f"Terrasa_{client_name}.pdf", mime="application/pdf", use_container_width=True)
 st.divider(); st.subheader("📐 Технические схемы (Размеры в мм)")
