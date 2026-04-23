@@ -312,7 +312,10 @@ html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li {
 }
 
 /* Исправление цвета текста в выпадающих списках (selectbox) */
-div[role="listbox"] * {
+div[data-baseweb="select"] * {
+    color: #000000 !important;
+}
+ul[role="listbox"] * {
     color: #000000 !important;
 }
 
