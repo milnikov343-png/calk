@@ -9,7 +9,14 @@ import datetime
 import pandas as pd
 import re
 from streamlit_drawable_canvas import st_canvas
+import json
 
+try:
+    import google.generativeai as genai
+    from PIL import Image
+    HAS_GENAI = True
+except ImportError:
+    HAS_GENAI = False
 # --- 1. ЗАГРУЗКА БАЗЫ ИЗ GOOGLE ТАБЛИЦ ---
 @st.cache_data(ttl=300)
 def load_google_sheet():
@@ -304,6 +311,11 @@ html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li {
     color: #f8f9fa !important;
 }
 
+/* Исправление цвета текста в выпадающих списках (selectbox) */
+div[role="listbox"] * {
+    color: #000000 !important;
+}
+
 /* Заголовок-шапка */
 .header-bar {
     background: linear-gradient(135deg, rgba(30, 60, 90, 0.95), rgba(20, 40, 70, 0.95));
@@ -530,11 +542,74 @@ if is_complex:
     # --- Фон холста ---
 
     # --- Предустановленные шаблоны для Г и П ---
-    initial_drawing = None
     s = 1.0 / mm_per_px  # mm → px
     ox, oy = 2 * grid_px, 2 * grid_px
 
-    if shape_type == "📐 Г-образная (Угловая)":
+    if "ai_drawing" not in st.session_state:
+        st.session_state.ai_drawing = None
+
+    # Блок работы с ИИ
+    st.markdown("### 🤖 Автоматическое распознавание чертежа (ИИ)")
+    with st.container():
+        c_ai1, c_ai2 = st.columns([1, 1])
+        with c_ai1:
+            uploaded_img = st.file_uploader("Загрузите фото или скан чертежа с размерами (jpg, png)", type=["jpg", "jpeg", "png"])
+        with c_ai2:
+            api_key = st.text_input("Gemini API Key (Токен доступа)", type="password", help="Получите ключ бесплатно на aistudio.google.com")
+            if st.button("✨ Перевести чертеж в проект", use_container_width=True, type="primary"):
+                if not HAS_GENAI:
+                    st.error("Библиотека google-generativeai не установлена. Введите в терминале: pip install google-generativeai pillow")
+                elif not api_key:
+                    st.warning("⚠️ Введите API ключ Gemini")
+                elif not uploaded_img:
+                    st.warning("⚠️ Загрузите изображение чертежа")
+                else:
+                    with st.spinner("Анализирую чертеж и размеры... это займет 5-10 секунд"):
+                        try:
+                            genai.configure(api_key=api_key)
+                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            img = Image.open(uploaded_img)
+                            
+                            prompt = '''
+                            Вы - опытный инженер-проектировщик. Пользователь загрузил чертеж террасы.
+                            Определите форму террасы и найдите все длины сторон (размеры).
+                            Переведите все размеры в миллиметры (например, если написано 4м, то это 4000).
+                            Постройте 2D полигон этой террасы. Первый угол всегда должен быть в координатах [0, 0].
+                            Следующие точки высчитайте по длинам сторон. Идите строго по часовой стрелке.
+                            Верните ТОЛЬКО валидный JSON массив координат вершин.
+                            Например: [[0, 0], [4000, 0], [4000, 3000], [0, 3000]]
+                            Не добавляйте текст markdown! Только JSON-массив из списков.
+                            '''
+                            response = model.generate_content([prompt, img])
+                            raw_resp = response.text.strip().removeprefix('```json').removesuffix('```').strip()
+                            
+                            ai_pts = json.loads(raw_resp)
+                            
+                            if len(ai_pts) >= 3:
+                                # Конвертируем [Xmm, Ymm] в [Xpx, Ypx]
+                                # Но у Canvas Y-ось идет вниз, поэтому:
+                                path_ai = [["M", ox + ai_pts[0][0] * s, oy + ai_pts[0][1] * s]]
+                                for p in ai_pts[1:]:
+                                    path_ai.append(["L", ox + p[0] * s, oy + p[1] * s])
+                                path_ai.append(["z"])
+                                
+                                st.session_state.ai_drawing = {
+                                    "version": "4.4.0", "objects": [{
+                                        "type": "path", "version": "4.4.0",
+                                        "left": 0, "top": 0, "fill": "rgba(41, 182, 246, 0.4)",
+                                        "stroke": "#0288d1", "strokeWidth": 2, "path": path_ai
+                                    }]
+                                }
+                                st.success("✅ Чертеж успешно распознан и перенесен на сетку!")
+                            else:
+                                st.error("Не удалось составить полигон из чертежа.")
+                        except Exception as e:
+                            st.error(f"Ошибка ИИ: {e}")
+
+    initial_drawing = st.session_state.ai_drawing
+
+    if initial_drawing is None:
+        if shape_type == "📐 Г-образная (Угловая)":
         pts = [(ox, oy), (ox + 6000 * s, oy), (ox + 6000 * s, oy + 3000 * s),
                (ox + 3000 * s, oy + 3000 * s), (ox + 3000 * s, oy + 5000 * s), (ox, oy + 5000 * s)]
         path = [["M", pts[0][0], pts[0][1]]]

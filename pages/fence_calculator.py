@@ -774,6 +774,11 @@ html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li {
     color: #f8f9fa !important;
 }
 
+/* Исправление цвета текста в выпадающих списках (selectbox) */
+div[role="listbox"] * {
+    color: #000000 !important;
+}
+
 /* Заголовок-шапка */
 .header-bar {
     background: linear-gradient(135deg, rgba(30, 60, 90, 0.95), rgba(20, 40, 70, 0.95));
