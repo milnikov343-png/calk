@@ -18,9 +18,11 @@ def get_image_base64(path):
 # Пути к картинкам
 terrace_img_path = os.path.join(os.path.dirname(__file__), "terrace_thumb.png")
 fence_img_path = os.path.join(os.path.dirname(__file__), "fence_thumb.png")
+money_img_path = os.path.join(os.path.dirname(__file__), "money_thumb.png")
 
 terrace_b64 = get_image_base64(terrace_img_path)
 fence_b64 = get_image_base64(fence_img_path)
+money_b64 = get_image_base64(money_img_path)
 
 # --- Эстетика стартовой страницы ---
 st.markdown("""
@@ -126,7 +128,7 @@ st.markdown("""
 <br>
 """, unsafe_allow_html=True)
 
-col1, col2 = st.columns(2, gap="large")
+col1, col2, col3 = st.columns(3, gap="large")
 
 with col1:
     img_tag_1 = f'<img src="data:image/png;base64,{terrace_b64}" class="card-image">' if terrace_b64 else '<div class="card-image" style="background:#333; display:flex; align-items:center; justify-content:center; font-size:3rem;">🏗️</div>'
@@ -159,5 +161,20 @@ with col2:
     """, unsafe_allow_html=True)
     if st.button("Открыть Калькулятор Заборов", use_container_width=True, type="primary"):
         st.switch_page("pages/fence_calculator.py")
+
+with col3:
+    img_tag_3 = f'<img src="data:image/png;base64,{money_b64}" class="card-image">' if money_b64 else '<div class="card-image" style="background:#333; display:flex; align-items:center; justify-content:center; font-size:3rem;">📋</div>'
+    
+    st.markdown(f"""
+    <div class="action-card">
+        {img_tag_3}
+        <div class="card-title">Прайс на работы</div>
+        <div class="card-desc">
+            Актуальные расценки на строительные и монтажные работы по заборам.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Открыть Прайс на работы по забору", use_container_width=True, type="primary"):
+        st.switch_page("pages/fence_prices.py")
 
 st.markdown("<br><hr style='opacity: 0.1;'><div style='text-align: center; color: #64748b; font-size: 0.8rem;'>Внутренняя система Дача 2000 | Версия 2.0</div>", unsafe_allow_html=True)
