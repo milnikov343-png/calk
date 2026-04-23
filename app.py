@@ -5,7 +5,7 @@ import os
 st.set_page_config(
     page_title="OOO Дача 2000 | Умный Калькулятор",
     page_icon="🏗️",
-    layout="centered"
+    layout="wide"
 )
 
 # Функция для конвертации картинки в base64
