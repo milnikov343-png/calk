@@ -1072,6 +1072,48 @@ if piles > 0: work_data.append({"Позиция": f"Монтаж свай ({pile
 
 grand_total = sum(d['Сумма'] for d in mat_data) + sum(d['Сумма'] for d in work_data)
 
+# --- ФОРМИРОВАНИЕ ТАБЛИЦЫ ДЕТАЛИЗАЦИИ ПО РЯДАМ ---
+detail_rows = []
+
+def format_row_data(row_name, pieces, standard_len):
+    full_count = {}
+    cut_count = {}
+    total_len = 0.0
+    for p in pieces:
+        p_val = round(p, 3)
+        total_len += p_val
+        if abs(p_val - standard_len) <= 0.01:
+            full_count[p_val] = full_count.get(p_val, 0) + 1
+        else:
+            cut_count[p_val] = cut_count.get(p_val, 0) + 1
+            
+    full_str = ", ".join([f"{l} м – {c} шт." for l, c in full_count.items()]) if full_count else "-"
+    cut_str = ", ".join([f"{l} м – {c} шт." for l, c in cut_count.items()]) if cut_count else "-"
+    
+    return {
+        "№ ряда / Элемент": row_name,
+        "Целые доски": full_str,
+        "Обрезанные доски": cut_str,
+        "Суммарная длина": f"{round(total_len, 3)} м"
+    }
+
+for i, row_pieces in enumerate(layout_matrix):
+    detail_rows.append(format_row_data(f"Ряд {i+1}", row_pieces, M))
+
+if use_frame:
+    if "Вдоль" in direction_choice:
+        if edge_front: detail_rows.append(format_row_data("Торцевая: Спереди", front_pieces, M))
+        if edge_back: detail_rows.append(format_row_data("Торцевая: Сзади", back_pieces, M))
+        if edge_left: detail_rows.append(format_row_data("Торцевая: Слева", left_pieces, M))
+        if edge_right: detail_rows.append(format_row_data("Торцевая: Справа", right_pieces, M))
+    else:
+        if edge_left: detail_rows.append(format_row_data("Торцевая: Слева", left_pieces, M))
+        if edge_right: detail_rows.append(format_row_data("Торцевая: Справа", right_pieces, M))
+        if edge_front: detail_rows.append(format_row_data("Торцевая: Спереди", front_pieces, M))
+        if edge_back: detail_rows.append(format_row_data("Торцевая: Сзади", back_pieces, M))
+
+detail_df = pd.DataFrame(detail_rows)
+
 # --- 5. ЧЕРТЕЖИ ---
 def get_plot(mode):
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -1193,6 +1235,11 @@ with m4:
         <div class="value total">{grand_total:,.0f} ₽</div>
     </div>
     """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+with st.expander("📊 Детализация по рядам (Точный расчет)", expanded=False):
+    st.dataframe(detail_df, use_container_width=True, hide_index=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 colA, colB = st.columns(2)
