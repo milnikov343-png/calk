@@ -778,7 +778,10 @@ html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li {
 div[data-baseweb="select"] * {
     color: #000000 !important;
 }
-ul[role="listbox"] * {
+div[data-baseweb="popover"] * {
+    color: #000000 !important;
+}
+li[role="option"] * {
     color: #000000 !important;
 }
 
