@@ -454,6 +454,11 @@ with st.expander("🛠️ ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (На
     with c1:
         st.markdown("#### 📐 1. Габариты и Бассейн")
         client_name = st.text_input("ФИО Клиента:", "Иван Иванович")
+        
+        st.markdown("**Менеджер проекта**")
+        manager_name = st.text_input("Имя менеджера:", "Иван Иванов")
+        manager_phone = st.text_input("Телефон менеджера:", "+7 (999) 000-00-00")
+        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
         shape_type = st.selectbox("Конфигурация:", ["⬜ Прямоугольная (Стандарт)", "📐 Г-образная (Угловая)", "🔲 П-образная (С вырезом)", "⏺️ Округлая (Овал / Круг)", "✏️ Свой контур (По координатам)"])
         
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
@@ -952,13 +957,45 @@ if is_complex:
         try: pdf.add_font('DejaVu', '', font_path); pdf.set_font('DejaVu', '', 12)
         except: pass
         pdf.cell(200, 10, txt="Смета: нестандартная терраса", ln=True, align='C')
-        pdf.cell(200, 10, txt=f"Клиент: {client_name} | Площадь: {poly_area:.2f} м²", ln=True, align='L'); pdf.ln(5)
+        pdf.cell(200, 10, txt=f"Клиент: {client_name} | Площадь: {poly_area:.2f} м²", ln=True, align='L')
+        if manager_name or manager_phone:
+            pdf.cell(200, 10, txt=f"Менеджер проекта: {manager_name} {manager_phone}", ln=True, align='L')
+        pdf.ln(5)
         pdf.set_fill_color(235, 235, 235)
         pdf.cell(110, 10, "Материалы", 1, 0, 'L', True); pdf.cell(30, 10, "Кол-во", 1, 0, 'C', True); pdf.cell(50, 10, "Сумма", 1, 1, 'C', True)
         for r in mat_data: pdf.cell(110, 10, str(r["Позиция"])[:45], 1); pdf.cell(30, 10, str(r["Кол-во"]), 1, 0, 'C'); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.", 1, 1, 'R')
         pdf.ln(5); pdf.cell(140, 10, "Строительно-монтажные работы", 1, 0, 'L', True); pdf.cell(50, 10, "Сумма", 1, 1, 'C', True)
         for r in work_data: pdf.cell(140, 10, str(r["Позиция"]), 1); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.", 1, 1, 'R')
         pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
+        
+        # ================= УТП Terrasy66 =================
+        pdf.add_page()
+        pdf.set_font('DejaVu', '', 14)
+        pdf.set_fill_color(0, 184, 148)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(190, 12, "Почему выбирают ООО «Дача 2000»:", ln=True, align='C', fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font('DejaVu', '', 11)
+        pdf.ln(8)
+        
+        usps = [
+            "- Террасы под ключ: полный цикл работ от проектирования до сдачи.",
+            "- Гарантия на монтажные работы 24 месяца.",
+            "- Используем только качественные материалы премиум-класса.",
+            "- Уникальные дизайнерские решения и нестандартные формы.",
+            "- Профессиональные бригады с многолетним опытом.",
+            "- Строгое соблюдение сроков по договору.",
+            "- Бесплатный выезд на замер и составление сметы."
+        ]
+        for usp in usps:
+            pdf.cell(190, 8, usp, ln=True)
+            
+        pdf.ln(10)
+        pdf.set_font('DejaVu', '', 12)
+        pdf.set_text_color(0, 184, 148)
+        pdf.cell(190, 8, "Создаем идеальные террасы для вашего отдыха!", ln=True, align='C')
+        pdf.set_text_color(0, 0, 0)
+
         for m, t in [("board", "Настил"), ("frame", "Схема подсистемы"), ("piles", "Свайное поле")]:
             if m == "piles" and piles == 0: continue
             pdf.add_page(); pdf.cell(200, 10, t, ln=True, align='C'); pdf.image(get_poly_plot(m), x=15, y=30, w=180)
@@ -1188,7 +1225,10 @@ def create_pdf():
     try: pdf.add_font('DejaVu', '', font_path); pdf.set_font('DejaVu', '', 12)
     except: pass
     pdf.cell(200, 10, txt="Смета и чертежи на устройство террасы", ln=True, align='C')
-    pdf.cell(200, 10, txt=f"Клиент: {client_name} | Габариты: {int(length*1000)}x{int(width*1000)} мм", ln=True, align='L'); pdf.ln(5)
+    pdf.cell(200, 10, txt=f"Клиент: {client_name} | Габариты: {int(length*1000)}x{int(width*1000)} мм", ln=True, align='L')
+    if manager_name or manager_phone:
+        pdf.cell(200, 10, txt=f"Менеджер проекта: {manager_name} {manager_phone}", ln=True, align='L')
+    pdf.ln(5)
     
     pdf.set_fill_color(235, 235, 235); pdf.cell(110, 10, "Материалы", 1, 0, 'L', True); pdf.cell(30, 10, "Кол-во", 1, 0, 'C', True); pdf.cell(50, 10, "Сумма", 1, 1, 'C', True)
     for r in mat_data: pdf.cell(110, 10, str(r["Позиция"])[:45], 1); pdf.cell(30, 10, str(r["Кол-во"]), 1, 0, 'C'); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.", 1, 1, 'R')
@@ -1197,6 +1237,35 @@ def create_pdf():
     for r in work_data: pdf.cell(140, 10, str(r["Позиция"]), 1); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.", 1, 1, 'R')
     
     pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
+    
+    # ================= УТП Terrasy66 =================
+    pdf.add_page()
+    pdf.set_font('DejaVu', '', 14)
+    pdf.set_fill_color(0, 184, 148)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(190, 12, "Почему выбирают ООО «Дача 2000»:", ln=True, align='C', fill=True)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('DejaVu', '', 11)
+    pdf.ln(8)
+    
+    usps = [
+        "- Террасы под ключ: полный цикл работ от проектирования до сдачи.",
+        "- Гарантия на монтажные работы 24 месяца.",
+        "- Используем только качественные материалы премиум-класса.",
+        "- Уникальные дизайнерские решения и нестандартные формы.",
+        "- Профессиональные бригады с многолетним опытом.",
+        "- Строгое соблюдение сроков по договору.",
+        "- Бесплатный выезд на замер и составление сметы."
+    ]
+    for usp in usps:
+        pdf.cell(190, 8, usp, ln=True)
+        
+    pdf.ln(10)
+    pdf.set_font('DejaVu', '', 12)
+    pdf.set_text_color(0, 184, 148)
+    pdf.cell(190, 8, "Создаем идеальные террасы для вашего отдыха!", ln=True, align='C')
+    pdf.set_text_color(0, 0, 0)
+
     for m, t in [("board", f"Настил"), ("frame", "Схема подсистемы"), ("piles", "Свайное поле")]:
         if m == "piles" and piles == 0: continue
         pdf.add_page(); pdf.cell(200, 10, t, ln=True, align='C'); pdf.image(get_plot(m), x=15, y=30, w=180)
@@ -1256,3 +1325,57 @@ with t2: st.image(get_plot("frame"), caption="Голубые линии — па
 with t3: 
     if piles > 0: st.image(get_plot("piles"))
     else: st.info("Основание — бетон, сваи не требуются.")
+
+# ============================================================
+# CRM И ЭКСПОРТ (БИЗНЕС-БЛОК)
+# ============================================================
+st.markdown("---")
+st.markdown("### 💼 Интеграции и Сохранение")
+
+# Собираем параметры проекта
+export_params = {
+    "client_name": client_name,
+    "manager_name": manager_name,
+    "manager_phone": manager_phone,
+    "shape_type": shape_type,
+    "length": length,
+    "width": width,
+    "has_pool": has_pool,
+    "brand_choice": brand_choice,
+    "collection_name": collection_name,
+    "direction_choice": direction_choice,
+    "use_frame": use_frame,
+    "base_type": base_type,
+    "steps_m": steps_m,
+    "grand_total": grand_total
+}
+
+col_export, col_crm = st.columns(2)
+
+with col_export:
+    st.info("Экспорт данных проекта в формате JSON для интеграций или архива.")
+    export_json = json.dumps(export_params, ensure_ascii=False, indent=2)
+    st.download_button(
+        "💾 Сохранить проект (JSON)",
+        data=export_json,
+        file_name=f"project_terrace_{datetime.date.today()}.json",
+        mime="application/json",
+        use_container_width=True
+    )
+
+with col_crm:
+    st.info("Отправка заявки в CRM-систему через Webhook (Битрикс24, amoCRM).")
+    crm_webhook = st.text_input("Webhook URL CRM:", placeholder="https://your-crm.bitrix24.ru/rest/...", label_visibility="collapsed")
+    if st.button("🚀 Отправить лид в CRM", use_container_width=True):
+        if crm_webhook:
+            try:
+                import requests
+                resp = requests.post(crm_webhook, json={"project_type": "terrace", "data": export_params, "total": grand_total})
+                if resp.status_code in [200, 201]:
+                    st.success("✅ Заявка успешно отправлена в CRM!")
+                else:
+                    st.error(f"❌ Ошибка отправки: статус {resp.status_code}")
+            except Exception as e:
+                st.error(f"❌ Ошибка соединения: {e}")
+        else:
+            st.warning("⚠️ Введите URL Webhook")

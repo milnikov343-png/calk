@@ -5,6 +5,8 @@ import os
 import datetime
 from fpdf import FPDF
 import io
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 # ============================================================
 # КОНФИГУРАЦИЯ
@@ -138,46 +140,20 @@ def save_prices(prices, proflist, shtaket):
 # РАСЧЕТЫ (все формулы из Excel)
 # ============================================================
 def calculate_fence(params, prices, proflist, shtaket):
-    """Воспроизводит ВСЕ формулы из Excel-калькулятора заборов."""
     calc_mode = params.get("calc_mode", "express")
-
-    if calc_mode == "detailed":
-        sides_data = params.get("sides_data", [])
-        fence_length = sum(s["length"] for s in sides_data)
-        n_kalitka = sum(s["kalitka_count"] for s in sides_data)
-        n_otkatnye = sum(s["otkatnye_count"] for s in sides_data)
-        n_raspashnye = sum(s["raspashnye_count"] for s in sides_data)
-
-        stolby_pod_zabor = 0
-        for s in sides_data:
-            s_len = s["length"] - s["kalitka_count"] * 1 - s["otkatnye_count"] * 4 - s["raspashnye_count"] * 4
-            stolby_pod_zabor += max(math.ceil(s_len / 3), 0)
-    else:
-        fence_length = params.get("fence_length", 0)  # общая длина забора (м.п.)
-        has_kalitka = params.get("has_kalitka", False)
-        kalitka_count = params.get("kalitka_count", 0)
-        has_otkatnye = params.get("has_otkatnye", False)
-        otkatnye_count = params.get("otkatnye_count", 0)
-        has_raspashnye = params.get("has_raspashnye", False)
-        raspashnye_count = params.get("raspashnye_count", 0)
-
-        n_kalitka = kalitka_count if has_kalitka else 0
-        n_otkatnye = otkatnye_count if has_otkatnye else 0
-        n_raspashnye = raspashnye_count if has_raspashnye else 0
-
-        stolby_pod_zabor = math.ceil((fence_length - n_kalitka * 1 - n_otkatnye * 4 - n_raspashnye * 4) / 3)
-        stolby_pod_zabor = max(stolby_pod_zabor, 0)
-
-    fence_height = params["fence_height"]  # высота забора (м)
-    material_type = params["material_type"]  # Профнастил / Штакет / Шахматка
-    material_name = params["material_name"]  # конкретный выбранный материал
-    gap = params["gap"]  # зазор для штакета (м)
-    fastener = params["fastener"]  # Саморез кровельный / Саморез с пресс-шайбой
+    fence_height = params["fence_height"]
+    material_type = params["material_type"]
+    material_name = params["material_name"]
+    gap = params["gap"]
+    fastener = params["fastener"]
     color_ral = params["color_ral"]
 
-    stolb_type = params["stolb_type"]  # индекс 1-4
-    lag_rows = params["lag_rows"]  # 2 или 3
+    stolb_type = params["stolb_type"]
+    lag_rows = params["lag_rows"]
     distance_km = params["distance_km"]
+    post_pitch = params.get("post_pitch", 3.0)
+    hole_depth = params.get("hole_depth", 1.5)
+    ground_distance = params.get("ground_distance", 0.05)
 
     has_fundament = params["has_fundament"]
     fund_length = params["fund_length"]
@@ -187,29 +163,167 @@ def calculate_fence(params, prices, proflist, shtaket):
     address = params["address"]
     contact = params["contact"]
 
-    # Столбы под ворота и калитки
-    stolby_pod_vorota = (n_kalitka * 2) + (n_otkatnye * 2) + (n_raspashnye * 2)
+    # Функция расчета одной стороны/элемента (как в JS)
+    def calc_side(length, height, gates_and_doors):
+        import math
+        # Определяем ширину листа
+        sheet_width = 1.15
+        if "С21" in material_name: sheet_width = 1.00
+        elif "С10" in material_name or "HC10" in material_name: sheet_width = 1.10
+        elif "С8" in material_name: sheet_width = 1.15
+
+        total_profile_area = 0
+        total_sheets_count = 0
+        total_screws = 0
+
+        def calc_element_profile(el_length, el_height):
+            nonlocal total_profile_area, total_sheets_count, total_screws
+            el_area = el_length * max(0, el_height - ground_distance)
+            if material_type == "Профнастил":
+                el_sheets = math.ceil(el_length / sheet_width)
+                screws_per_sheet = math.ceil(max(0, el_height - ground_distance) / 0.5) * 2
+                screws = el_sheets * screws_per_sheet
+            elif material_type == "Штакет":
+                sh_data = shtaket.get(material_name, {"price": 55, "width_m": 0.1})
+                sh_width = sh_data["width_m"]
+                el_sheets = math.ceil(el_length / (sh_width + gap))
+                screws = el_sheets * 4
+            else: # Шахматка
+                sh_data = shtaket.get(material_name, {"price": 55, "width_m": 0.1})
+                sh_width = sh_data["width_m"]
+                el_sheets = math.ceil(el_length / (sh_width + gap)) * 2
+                screws = el_sheets * 4
+
+            total_profile_area += el_area
+            total_sheets_count += el_sheets
+            total_screws += screws
+            return el_sheets
+
+        available_length = length
+        gate_door_count = 0
+        extra80_posts = 0
+
+        for item in gates_and_doors:
+            available_length -= item["width"]
+            gate_door_count += 1
+            extra80_posts += 2  # 2 столба 80х80 на проем
+            calc_element_profile(item["width"], height)
+
+        available_length = max(0, available_length)
+        
+        # Расчет секций
+        if available_length > 0:
+            section_count = math.ceil(available_length / post_pitch)
+        else:
+            section_count = 0
+            
+        post_count = max(0, section_count + 1 - gate_door_count)
+        if available_length == 0:
+            post_count = 0
+            
+        lag_total_count = section_count * lag_rows
+        
+        if available_length > 0:
+            calc_element_profile(available_length, height)
+            
+        # Саморезы для лаг
+        total_screws += lag_total_count * 2
+
+        # Объем бетона (в м3) на лунки
+        radius = 0.3 / 2  # диаметр 300мм
+        one_hole_vol = math.pi * radius * radius * hole_depth
+        concrete_vol = one_hole_vol * (post_count + extra80_posts)
+
+        return {
+            "post_count": post_count,
+            "extra80_posts": extra80_posts,
+            "lag_total_count": lag_total_count,
+            "profile_area": total_profile_area,
+            "sheets_count": total_sheets_count,
+            "total_screws": total_screws,
+            "concrete_vol": concrete_vol,
+            "montazh_length": available_length
+        }
+
+    # Сбор данных
+    total_stolby = 0
+    total_stolby_vorota = 0
+    total_lagi = 0
+    total_finish_qty = 0
+    total_screws = 0
+    total_concrete_vol = 0
+    total_montazh_length = 0
+
+    n_kalitka = 0
+    n_otkatnye = 0
+    n_raspashnye = 0
+    fence_length_total = 0
+
+    if calc_mode == "detailed":
+        sides_data = params.get("sides_data", [])
+        for s in sides_data:
+            fence_length_total += s["length"]
+            n_kalitka += s["kalitka_count"]
+            n_otkatnye += s["otkatnye_count"]
+            n_raspashnye += s["raspashnye_count"]
+            
+            g_d = []
+            for _ in range(s["kalitka_count"]): g_d.append({"type": "door", "width": 1.0})
+            for _ in range(s["otkatnye_count"]): g_d.append({"type": "gate", "width": 4.0})
+            for _ in range(s["raspashnye_count"]): g_d.append({"type": "gate", "width": 4.0})
+            
+            res = calc_side(s["length"], fence_height, g_d)
+            total_stolby += res["post_count"]
+            total_stolby_vorota += res["extra80_posts"]
+            total_lagi += res["lag_total_count"]
+            total_finish_qty += res["sheets_count"]
+            total_screws += res["total_screws"]
+            total_concrete_vol += res["concrete_vol"]
+            total_montazh_length += res["montazh_length"]
+    else:
+        fence_length_total = params.get("fence_length", 0)
+        has_kalitka = params.get("has_kalitka", False)
+        n_kalitka = params.get("kalitka_count", 0) if has_kalitka else 0
+        has_otkatnye = params.get("has_otkatnye", False)
+        n_otkatnye = params.get("otkatnye_count", 0) if has_otkatnye else 0
+        has_raspashnye = params.get("has_raspashnye", False)
+        n_raspashnye = params.get("raspashnye_count", 0) if has_raspashnye else 0
+        
+        g_d = []
+        for _ in range(n_kalitka): g_d.append({"type": "door", "width": 1.0})
+        for _ in range(n_otkatnye): g_d.append({"type": "gate", "width": 4.0})
+        for _ in range(n_raspashnye): g_d.append({"type": "gate", "width": 4.0})
+        
+        res = calc_side(fence_length_total, fence_height, g_d)
+        total_stolby = res["post_count"]
+        total_stolby_vorota = res["extra80_posts"]
+        total_lagi = res["lag_total_count"]
+        total_finish_qty = res["sheets_count"]
+        total_screws = res["total_screws"]
+        total_concrete_vol = res["concrete_vol"]
+        total_montazh_length = res["montazh_length"]
 
     # --- Цены установки/монтажа ---
-    if fence_length < 31:
+    import math
+    if fence_length_total < 31:
         price_stolb_install = 500
         base_m = 1300; base_3l = 1800; base_2s = 2000
-    elif fence_length < 51:
+    elif fence_length_total < 51:
         price_stolb_install = 450
         base_m = 1200; base_3l = 1700; base_2s = 1900
-    elif fence_length < 71:
+    elif fence_length_total < 71:
         price_stolb_install = 400
         base_m = 1100; base_3l = 1600; base_2s = 1800
-    elif fence_length < 101:
+    elif fence_length_total < 101:
         price_stolb_install = 400
         base_m = 1000; base_3l = 1500; base_2s = 1700
-    elif fence_length < 201:
+    elif fence_length_total < 201:
         price_stolb_install = 400
         base_m = 900; base_3l = 1400; base_2s = 1600
-    elif fence_length < 351:
+    elif fence_length_total < 351:
         price_stolb_install = 400
         base_m = 600; base_3l = 850; base_2s = 1050
-    elif fence_length < 501:
+    elif fence_length_total < 501:
         price_stolb_install = 400
         base_m = 550; base_3l = 750; base_2s = 850
     else:
@@ -223,10 +337,7 @@ def calculate_fence(params, prices, proflist, shtaket):
     else:
         price_montazh = math.ceil((base_m * 1.2) / 10) * 10
 
-    price_pokraska = 50 if fence_length < 30 else (30 if fence_length < 50 else 25)
-
-    # Длина монтажа забора (м.п.)
-    montazh_length = fence_length - n_otkatnye * 4 - n_raspashnye * 4 - n_kalitka
+    price_pokraska = 50 if fence_length_total < 30 else (30 if fence_length_total < 50 else 25)
 
     # --- Цена столба (выбранного типа) ---
     stolb_names = {
@@ -238,66 +349,42 @@ def calculate_fence(params, prices, proflist, shtaket):
     stolb_price_key = stolb_names.get(stolb_type, "Столб 60х60х2мм")
     stolb_price_per_mp = prices.get(stolb_price_key, 944)
 
-    # --- Лаги ---
-    lagi_count = lag_rows * stolby_pod_zabor
-
     # --- Финишный материал ---
-    finish_qty = 0
     finish_price_total = 0
-    finish_name = material_name
-
     if material_type == "Профнастил":
-        # Кол-во листов (м.п., с коэфф 1.15 на нахлест) + ворота/калитки
-        finish_qty = math.ceil(fence_length / 1.15 + n_kalitka + n_otkatnye + n_raspashnye)
-        # Цена за лист = 1.22 * высота * цена_за_м2
         price_m2 = proflist.get(material_name, 465)
-        finish_price_total = round(finish_qty * 1.22 * fence_height * price_m2)
-    elif material_type == "Штакет":
+        # В JS считалась точная площадь листа (1.22 * высота) 
+        # Или мы можем использовать price_m2 как цену квадрата: qty * 1.22 * height * price_m2
+        finish_price_total = round(total_finish_qty * 1.22 * fence_height * price_m2)
+    elif material_type in ["Штакет", "Шахматка"]:
         sh_data = shtaket.get(material_name, {"price": 55, "width_m": 0.1})
-        sh_width = sh_data["width_m"]
         sh_price = sh_data["price"]
-        finish_qty = math.ceil(fence_length / (sh_width + gap))
-        finish_price_total = round(finish_qty * sh_price * fence_height)
-    elif material_type == "Шахматка":
-        sh_data = shtaket.get(material_name, {"price": 55, "width_m": 0.1})
-        sh_width = sh_data["width_m"]
-        sh_price = sh_data["price"]
-        finish_qty = math.ceil(fence_length / (sh_width + gap)) * 2
-        finish_price_total = round(finish_qty * sh_price * fence_height)
+        finish_price_total = round(total_finish_qty * sh_price * fence_height)
 
     # --- Саморезы (креплёж) ---
     fastener_price = prices.get(fastener, 3.5)
-    if material_type == "Профнастил":
-        samorez_qty = math.ceil(fence_length * fence_height * 6)
-    else:
-        samorez_qty = finish_qty * 4  # 4 самореза на штакетину
-    samorez_qty = math.ceil(samorez_qty / 250) * 250  # Округляем до упаковки
+    samorez_qty = math.ceil(total_screws / 250) * 250
 
     # --- Расходные материалы ---
-    elektrod_packs = max(math.ceil(fence_length / 120), 1)
-    kraska_cans = max(math.ceil(fence_length / 30), 1)
-    cement_bags = math.ceil(stolby_pod_zabor / 4 + n_kalitka / 2 + n_raspashnye / 2 + n_otkatnye * 4)
-    scheben_bags = math.ceil(stolby_pod_zabor + n_kalitka * 2 + n_otkatnye * 6 + n_raspashnye * 2 - stolby_pod_zabor / 2)
+    elektrod_packs = max(math.ceil(fence_length_total / 120), 1)
+    kraska_cans = max(math.ceil(fence_length_total / 30), 1)
+    
+    # Конвертация объема бетона лунок в мешки (Примерно: из мешка 50кг = 0.022 м3 бетона, либо цемент+щебень)
+    # 1 м3 бетона = ~350 кг цемента (7 мешков) и ~1200 кг щебня (24 мешка)
+    cement_bags = math.ceil(total_concrete_vol * 7)
+    scheben_bags = math.ceil(total_concrete_vol * 24)
     otsev_bags = scheben_bags
 
-    # Покраска (м.п.)
-    pokraska_mp = (lagi_count * 3) + (stolby_pod_zabor * 2) + (n_kalitka * 7) + (n_otkatnye * 70) + (n_raspashnye * 40)
-
-    # Валики
-    valik_qty = 3 if fence_length < 50 else 6
-    # Цинк
-    zink_qty = 1 if fence_length <= 100 else 2
-    # Диски
-    disk_qty = math.ceil(fence_length / 10)
-
-    # Доставка + ГСМ
+    pokraska_mp = (total_lagi * 3) + (total_stolby * 2) + (n_kalitka * 7) + (n_otkatnye * 70) + (n_raspashnye * 40)
+    valik_qty = 3 if fence_length_total < 50 else 6
+    zink_qty = 1 if fence_length_total <= 100 else 2
+    disk_qty = math.ceil(fence_length_total / 10)
     delivery_cost = round(distance_km * prices.get("Доставка (коэфф. расстояния)", 204))
 
     # --- ФУНДАМЕНТ (опционально) ---
     fund_items = []
     if has_fundament:
         beton_m3 = fund_length * fund_width * fund_height
-        # Объём фундамента определяет единицу измерения работ
         if beton_m3 > 8:
             fund_work_unit = "м3"
             fund_work_qty = beton_m3
@@ -337,51 +424,39 @@ def calculate_fence(params, prices, proflist, shtaket):
              "price": prices.get("Проволка для связки 3мм (кг)", 350)},
         ]
 
-    # ============================================================
-    # ФОРМИРОВАНИЕ ИТОГОВОЙ ТАБЛИЦЫ (как в листе «Итог»)
-    # ============================================================
-    works = []  # работы
-    materials = []  # материалы
+    # ======== ФОРМИРОВАНИЕ ИТОГОВОЙ ТАБЛИЦЫ ========
+    works = []
+    materials = []
 
-    # 1. Монтаж столбов
     works.append({
         "name": "Монтаж столбов на глубину бурения, выставление по уровню, заливка бетоном",
-        "unit": "шт.", "qty": stolby_pod_zabor, "price": price_stolb_install,
-        "total": stolby_pod_zabor * price_stolb_install
+        "unit": "шт.", "qty": total_stolby, "price": price_stolb_install,
+        "total": total_stolby * price_stolb_install
     })
-
-    # 2. Бурение
     works.append({
-        "name": "Бурение отверстий в грунте глубиной 1500мм",
-        "unit": "шт", "qty": stolby_pod_zabor, "price": price_stolb_install,
-        "total": stolby_pod_zabor * price_stolb_install
+        "name": f"Бурение отверстий в грунте глубиной {hole_depth*1000:.0f}мм",
+        "unit": "шт", "qty": total_stolby, "price": price_stolb_install,
+        "total": total_stolby * price_stolb_install
     })
-
-    # 3. Монтаж забора
     works.append({
         "name": "Монтаж забора",
-        "unit": "м.п.", "qty": montazh_length, "price": price_montazh,
-        "total": round(montazh_length * price_montazh)
+        "unit": "м.п.", "qty": round(total_montazh_length, 1), "price": price_montazh,
+        "total": round(total_montazh_length * price_montazh)
     })
 
-    # 4. Монтаж ворот откатных
     if n_otkatnye > 0:
         works.append({
             "name": "Монтаж ворот откатных",
             "unit": "шт", "qty": n_otkatnye, "price": prices.get("Монтаж ворот откатных", 36000),
             "total": n_otkatnye * prices.get("Монтаж ворот откатных", 36000)
         })
-        # Если есть привод (здесь мы проверяем выбран ли привод. Предположим, если "Привод для откатных ворот" есть в опциях, 
-        # то добавим. Но поскольку в старом коде это был просто материал, мы добавим работу по монтажу привода всегда, 
-        # когда выбраны откатные ворота, если он включен. Добавим опцию в форму позже или просто добавим сейчас.)
-        if params.get("has_otkatnye_privod", True):
+        if params.get("has_avtomatika", True):
             works.append({
                 "name": "Монтаж привода под откатные ворота",
                 "unit": "шт", "qty": n_otkatnye, "price": prices.get("Монтаж привода под откатные ворота", 5400),
                 "total": n_otkatnye * prices.get("Монтаж привода под откатные ворота", 5400)
             })
 
-    # 5. Монтаж ворот распашных
     if n_raspashnye > 0:
         works.append({
             "name": "Монтаж ворот распашных",
@@ -389,7 +464,6 @@ def calculate_fence(params, prices, proflist, shtaket):
             "total": n_raspashnye * prices.get("Монтаж ворот распашных", 11880)
         })
 
-    # 6. Монтаж калитки
     if n_kalitka > 0:
         works.append({
             "name": "Монтаж калитки",
@@ -397,14 +471,12 @@ def calculate_fence(params, prices, proflist, shtaket):
             "total": n_kalitka * prices.get("Монтаж калитки", 6600)
         })
 
-    # 7. Покраска
     works.append({
         "name": "Покраска металлоконструкции",
-        "unit": "м.п.", "qty": pokraska_mp, "price": price_pokraska,
-        "total": pokraska_mp * price_pokraska
+        "unit": "м.п.", "qty": round(pokraska_mp, 1), "price": price_pokraska,
+        "total": round(pokraska_mp * price_pokraska)
     })
 
-    # 8. Фундаментные работы
     if has_fundament:
         works.append({
             "name": "Монтажные работы по заливке фундамента",
@@ -412,84 +484,65 @@ def calculate_fence(params, prices, proflist, shtaket):
             "total": round(fund_work_qty * fund_work_price)
         })
 
-    # ======== МАТЕРИАЛЫ ========
-
-    # Финишный материал
     materials.append({
-        "name": finish_name,
+        "name": material_name,
         "unit": "шт" if material_type != "Профнастил" else "лист",
-        "qty": finish_qty,
-        "price": round(finish_price_total / max(finish_qty, 1)),
+        "qty": total_finish_qty,
+        "price": round(finish_price_total / max(total_finish_qty, 1)),
         "total": finish_price_total
     })
-
-    # Саморезы
     materials.append({
         "name": fastener,
         "unit": "шт", "qty": samorez_qty,
         "price": fastener_price,
         "total": round(samorez_qty * fastener_price)
     })
-
-    # Столбы заборные
     materials.append({
         "name": f"Столб заборный {stolb_type}",
-        "unit": "шт", "qty": stolby_pod_zabor,
+        "unit": "шт", "qty": total_stolby,
         "price": stolb_price_per_mp,
-        "total": stolby_pod_zabor * stolb_price_per_mp
+        "total": total_stolby * stolb_price_per_mp
     })
-
-    # Столбы под ворота/калитки (80х80)
-    if stolby_pod_vorota > 0:
+    
+    if total_stolby_vorota > 0:
         stolb_vor_price = prices.get("Столб под ворота 80х80х3000", 1275)
         materials.append({
             "name": "Столб под ворота и калитки 80х80х3000",
-            "unit": "шт", "qty": stolby_pod_vorota,
+            "unit": "шт", "qty": total_stolby_vorota,
             "price": stolb_vor_price,
-            "total": stolby_pod_vorota * stolb_vor_price
+            "total": total_stolby_vorota * stolb_vor_price
         })
 
-    # Электроды
     materials.append({
         "name": "Электроды сварочные Ок-46 3мм",
         "unit": "пачка", "qty": elektrod_packs,
         "price": prices.get("Электроды сварочные Ок-46 3мм (пачка)", 2600),
         "total": elektrod_packs * prices.get("Электроды сварочные Ок-46 3мм (пачка)", 2600)
     })
-
-    # Краска
     materials.append({
         "name": "Краска грунт-эмаль 3в1",
         "unit": "банка", "qty": kraska_cans,
         "price": prices.get("Краска грунт-эмаль 3в1", 2200),
         "total": kraska_cans * prices.get("Краска грунт-эмаль 3в1", 2200)
     })
-
-    # Лаги
     materials.append({
         "name": "Лага заборная 40х20х3000мм",
-        "unit": "шт", "qty": lagi_count,
+        "unit": "шт", "qty": total_lagi,
         "price": prices.get("Лага заборная 40х20х3000мм", 362),
-        "total": lagi_count * prices.get("Лага заборная 40х20х3000мм", 362)
+        "total": total_lagi * prices.get("Лага заборная 40х20х3000мм", 362)
     })
-
-    # Цемент
     materials.append({
         "name": "Цемент (мешок 50кг)",
         "unit": "мешок", "qty": cement_bags,
         "price": prices.get("Цемент (мешок 50кг)", 550),
         "total": cement_bags * prices.get("Цемент (мешок 50кг)", 550)
     })
-
-    # Щебень
     materials.append({
         "name": "Щебень (мешок 50кг)",
         "unit": "мешок", "qty": scheben_bags,
         "price": prices.get("Щебень (мешок 50кг)", 170),
         "total": scheben_bags * prices.get("Щебень (мешок 50кг)", 170)
     })
-
-    # Отсев
     materials.append({
         "name": "Отсев (мешок 50кг)",
         "unit": "мешок", "qty": otsev_bags,
@@ -497,7 +550,6 @@ def calculate_fence(params, prices, proflist, shtaket):
         "total": otsev_bags * prices.get("Отсев (мешок 50кг)", 170)
     })
 
-    # Ворота откатные (материал)
     if n_otkatnye > 0:
         otk_price = prices.get("Ворота откатные со швеллером балкой и роликами", 24000)
         materials.append({
@@ -506,7 +558,6 @@ def calculate_fence(params, prices, proflist, shtaket):
             "price": otk_price,
             "total": n_otkatnye * otk_price
         })
-        # Привод
         privod_price = prices.get("Привод для откатных ворот", 33500)
         materials.append({
             "name": "Привод для откатных ворот",
@@ -515,7 +566,6 @@ def calculate_fence(params, prices, proflist, shtaket):
             "total": n_otkatnye * privod_price
         })
 
-    # Ворота распашные (материал)
     if n_raspashnye > 0:
         rasp_price = prices.get("Ворота распашные стандарт", 9000)
         materials.append({
@@ -525,7 +575,6 @@ def calculate_fence(params, prices, proflist, shtaket):
             "total": n_raspashnye * rasp_price
         })
 
-    # Калитка (материал)
     if n_kalitka > 0:
         kal_price = prices.get("Калитка стандарт", 5400)
         materials.append({
@@ -542,39 +591,30 @@ def calculate_fence(params, prices, proflist, shtaket):
             "total": n_kalitka * zamok_price
         })
 
-    # Диски
     materials.append({
         "name": "Диски отрезные 125х1,2",
         "unit": "шт", "qty": disk_qty,
         "price": prices.get("Диски отрезные 125х1,2", 35),
         "total": disk_qty * prices.get("Диски отрезные 125х1,2", 35)
     })
-
-    # Валики
     materials.append({
         "name": "Валик с бюгелем полиакриловый",
         "unit": "шт", "qty": valik_qty,
         "price": prices.get("Валик с бюгелем", 250),
         "total": valik_qty * prices.get("Валик с бюгелем", 250)
     })
-
-    # Цинк
     materials.append({
         "name": "Цинк холодный (баллончик)",
         "unit": "шт", "qty": zink_qty,
         "price": prices.get("Цинк холодный (баллончик)", 450),
         "total": zink_qty * prices.get("Цинк холодный (баллончик)", 450)
     })
-
-    # Ветошь
     materials.append({
         "name": "Ветошь для обработки",
         "unit": "шт", "qty": 1,
         "price": prices.get("Ветошь", 100),
         "total": prices.get("Ветошь", 100)
     })
-
-    # Обезжириватель
     materials.append({
         "name": "Обезжириватель",
         "unit": "шт", "qty": 1,
@@ -582,7 +622,6 @@ def calculate_fence(params, prices, proflist, shtaket):
         "total": prices.get("Обезжириватель", 190)
     })
 
-    # Фундамент — материалы
     for fi in fund_items:
         materials.append({
             "name": fi["name"],
@@ -591,7 +630,6 @@ def calculate_fence(params, prices, proflist, shtaket):
             "total": round(fi["qty"] * fi["price"])
         })
 
-    # Доставка
     materials.append({
         "name": "Доставка + ГСМ монтажников",
         "unit": "шт", "qty": 1,
@@ -603,12 +641,69 @@ def calculate_fence(params, prices, proflist, shtaket):
     total_materials = sum(m["total"] for m in materials)
     grand_total = total_works + total_materials
 
+    # --- Генерация чертежа ---
+    import io
+    import matplotlib.pyplot as plt
+    plot_bytes = None
+    if params.get("calc_mode") == "detailed":
+        fig, ax = plt.subplots(figsize=(12, 3))
+        current_x = 0
+        
+        # Рисуем каждую сторону друг за другом (в виде прямой линии)
+        for i, s in enumerate(params.get("sides_data", []), 1):
+            s_len = s["length"]
+            # Рисуем линию забора
+            ax.plot([current_x, current_x + s_len], [0, 0], color='black', lw=2)
+            
+            # Добавляем подпись стороны
+            ax.text(current_x + s_len/2, 0.5, f"Сторона {i} ({s_len} м)", ha='center', fontweight='bold', color='blue')
+            
+            # Ворота и калитки
+            if s.get("kalitka_count", 0) > 0:
+                pos = float(s.get("kalitka_pos") or 0)
+                ax.plot([current_x + pos, current_x + pos + 1], [0, 0], color='green', lw=6, label='Калитка' if i==1 else "")
+                ax.text(current_x + pos + 0.5, -0.8, "Калитка", ha='center', color='green', fontsize=8)
+                
+            if s.get("otkatnye_count", 0) > 0:
+                pos = float(s.get("otkatnye_pos") or 0)
+                ax.plot([current_x + pos, current_x + pos + 4], [0, 0], color='red', lw=6, label='Откатные' if i==1 else "")
+                ax.text(current_x + pos + 2, -0.8, "Отк.ворота", ha='center', color='red', fontsize=8)
+                
+            if s.get("raspashnye_count", 0) > 0:
+                pos = float(s.get("raspashnye_pos") or 0)
+                ax.plot([current_x + pos, current_x + pos + 4], [0, 0], color='purple', lw=6, label='Распашные' if i==1 else "")
+                ax.text(current_x + pos + 2, -0.8, "Расп.ворота", ha='center', color='purple', fontsize=8)
+            
+            # Столбы с шагом 3м
+            posts_count = math.ceil(s_len / 3) + 1
+            for p_i in range(posts_count):
+                px = min(current_x + p_i * 3, current_x + s_len)
+                ax.plot(px, 0, marker='s', color='black', markersize=4)
+                
+            current_x += s_len + 2 # Отступ между сторонами на чертеже
+
+        ax.set_ylim(-2, 2)
+        ax.set_xlim(-1, current_x)
+        ax.axis('off')
+        
+        # Легенда
+        handles, labels = ax.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        if by_label:
+            ax.legend(by_label.values(), by_label.keys(), loc='upper right')
+            
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+        plt.close(fig)
+        plot_bytes = buf.getvalue()
+
     return {
         "works": works,
         "materials": materials,
         "total_works": total_works,
         "total_materials": total_materials,
         "grand_total": grand_total,
+        "plot_bytes": plot_bytes,
         "params": params,
     }
 
@@ -646,6 +741,12 @@ def create_fence_pdf(result, params):
     pdf.cell(0, 6, f'Наименование объекта: Монтаж забора', ln=True)
     pdf.cell(0, 6, f'Адрес: {params.get("address", "")}', ln=True)
     pdf.cell(0, 6, f'Контактное лицо: {params.get("contact", "")}', ln=True)
+    
+    m_name = params.get("manager_name", "")
+    m_phone = params.get("manager_phone", "")
+    if m_name or m_phone:
+        pdf.cell(0, 6, f'Менеджер проекта: {m_name} {m_phone}', ln=True)
+        
     pdf.ln(3)
 
     if params.get("calc_mode") == "detailed":
@@ -740,6 +841,45 @@ def create_fence_pdf(result, params):
     pdf.cell(95, 6, '_____________________________')
     pdf.cell(95, 6, '_____________________________', ln=True)
     pdf.cell(95, 6, 'М.П.')
+
+    # ================= УТП (Unique Selling Proposition) =================
+    pdf.add_page()
+    pdf.set_font(font, "", 14)
+    pdf.set_fill_color(0, 184, 148)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(190, 12, "Почему выбирают ООО «Дача 2000»:", ln=True, align='C', fill=True)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font(font, "", 11)
+    pdf.ln(8)
+    
+    usps = [
+        "- Работаем строго по договору в Екатеринбурге и области.",
+        "- 28 собственных квалифицированных бригад монтажников.",
+        "- Собственное производство конструкций.",
+        "- Честная гарантия на все выполненные работы до 3 лет.",
+        "- Исправляем любые дефекты и несоответствия за свой счет.",
+        "- Не поднимаем стоимость: покрываем непредвиденные расходы за свой счет.",
+        "- Платим неустойку за срыв сроков монтажа (прописано в договоре).",
+        "- Умеем работать в полевых условиях (даже если нет электричества и воды).",
+        "- Cashback 5% от суммы договора на другие услуги по благоустройству."
+    ]
+    
+    for usp in usps:
+        pdf.cell(190, 8, usp, ln=True)
+        
+    pdf.ln(10)
+    pdf.set_font(font, "", 12)
+    pdf.set_text_color(0, 184, 148)
+    pdf.cell(190, 8, "Мы строим надежные заборы для вашей безопасности и комфорта!", ln=True, align='C')
+    pdf.set_text_color(0, 0, 0)
+
+    # ================= ЧЕРТЕЖ =================
+    if "plot_bytes" in result and result["plot_bytes"]:
+        pdf.add_page()
+        pdf.set_font(font, "", 14)
+        pdf.cell(190, 10, "Схема расстановки столбов (вид сверху)", ln=True, align='C')
+        pdf.image(result["plot_bytes"], x=15, y=30, w=180)
 
     return bytes(pdf.output())
 
@@ -974,13 +1114,24 @@ with st.expander("🛠️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чт�
                     with col_o:
                         s_otk = st.number_input(f"Отк. ворота:", 0, 5, 0, key=f"s_otk_{i}")
                         s_otk_pos = ""
+                        s_avto = False
                         if s_otk > 0:
                             s_otk_pos = st.text_input("Отступ (м):", "5", key=f"s_otk_pos_{i}")
+                            s_avto = st.checkbox("Автоматика", value=True, key=f"s_avto_{i}")
                     with col_r:
                         s_rasp = st.number_input(f"Расп. ворота:", 0, 5, 0, key=f"s_rasp_{i}")
                         s_rasp_pos = ""
                         if s_rasp > 0:
                             s_rasp_pos = st.text_input("Отступ (м):", "5", key=f"s_rasp_pos_{i}")
+                    
+                    st.markdown("**Материал для стороны:**")
+                    s_mat_type = st.radio(f"Тип:", ["Профнастил", "Штакет", "Шахматка"], horizontal=True, key=f"s_mat_type_{i}", label_visibility="collapsed")
+                    if s_mat_type == "Профнастил":
+                        s_mat_name = st.selectbox(f"Профлист:", list(proflist.keys()), key=f"s_mat_name_{i}")
+                        s_gap = 0.0
+                    else:
+                        s_mat_name = st.selectbox(f"Штакет:", list(shtaket.keys()), key=f"s_mat_name_{i}")
+                        s_gap = st.number_input("Зазор (м):", 0.01, 0.10, 0.04, step=0.01, key=f"s_gap_{i}")
                     
                     sides_data.append({
                         "length": s_len,
@@ -988,8 +1139,12 @@ with st.expander("🛠️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чт�
                         "kalitka_pos": s_kal_pos,
                         "otkatnye_count": s_otk,
                         "otkatnye_pos": s_otk_pos,
+                        "has_avtomatika": s_avto,
                         "raspashnye_count": s_rasp,
-                        "raspashnye_pos": s_rasp_pos
+                        "raspashnye_pos": s_rasp_pos,
+                        "material_type": s_mat_type,
+                        "material_name": s_mat_name,
+                        "gap": s_gap
                     })
             
             fence_length = sum(s["length"] for s in sides_data)
@@ -998,14 +1153,21 @@ with st.expander("🛠️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чт�
 
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
 
-        material_type = st.radio("Тип финишного материала:", ["Профнастил", "Штакет", "Шахматка"], horizontal=True)
+        if calc_mode == "express":
+            material_type = st.radio("Тип финишного материала:", ["Профнастил", "Штакет", "Шахматка"], horizontal=True)
 
-        if material_type == "Профнастил":
-            material_name = st.selectbox("Выберите профлист:", list(proflist.keys()))
-            gap_m = 0.0
+            if material_type == "Профнастил":
+                material_name = st.selectbox("Выберите профлист:", list(proflist.keys()))
+                gap_m = 0.0
+            else:
+                material_name = st.selectbox("Выберите штакет:", list(shtaket.keys()))
+                gap_m = st.number_input("Зазор между штакетинами (м):", 0.01, 0.10, 0.04, step=0.01)
         else:
-            material_name = st.selectbox("Выберите штакет:", list(shtaket.keys()))
-            gap_m = st.number_input("Зазор между штакетинами (м):", 0.01, 0.10, 0.04, step=0.01)
+            # Для детального режима материалы уже выбраны для каждой стороны,
+            # но мы ставим заглушки для совместимости кода ниже
+            material_type = "Профнастил"
+            material_name = list(proflist.keys())[0]
+            gap_m = 0.0
 
         color_ral = st.text_input("Цвет RAL:", "RAL 8017")
         fastener = st.selectbox("Способ крепления:", ["Саморез кровельный в цвет", "Саморез с пресс-шайбой"])
@@ -1018,21 +1180,36 @@ with st.expander("🛠️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чт�
             kalitka_count = st.number_input("Кол-во калиток:", 1, 5, 1, key="kalitka_n") if has_kalitka else 0
 
             has_otkatnye = st.checkbox("Ворота откатные", value=True)
-            otkatnye_count = st.number_input("Кол-во откатных ворот:", 1, 5, 1, key="otkat_n") if has_otkatnye else 0
+            if has_otkatnye:
+                otkatnye_count = st.number_input("Кол-во откатных ворот:", 1, 5, 1, key="otkat_n")
+                has_avtomatika = st.checkbox("Установить автоматику (привод)", value=True, key="avto_exp")
+            else:
+                otkatnye_count = 0
+                has_avtomatika = False
 
             has_raspashnye = st.checkbox("Ворота распашные", value=False)
             raspashnye_count = st.number_input("Кол-во распашных ворот:", 1, 5, 1, key="rasp_n") if has_raspashnye else 0
         else:
+            has_avtomatika = any(s.get("has_avtomatika", False) for s in sides_data)
             st.info("Ворота и калитки настраиваются для каждой стороны в блоке слева.")
 
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
 
         stolb_type = st.selectbox("Тип столбов:", ["60х60х2мм", "73мм НКТ", "60х40х2мм", "80х80х2мм"])
         lag_rows = st.radio("Количество рядов лаг:", [2, 3], horizontal=True)
+        
+        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
+        post_pitch = st.number_input("Шаг столбов (м):", 1.0, 5.0, 3.0, step=0.1)
+        hole_depth = st.number_input("Глубина бурения (м):", 0.5, 3.0, 1.5, step=0.1)
+        ground_distance = st.number_input("Зазор снизу (м):", 0.0, 0.5, 0.05, step=0.01)
 
     with c3:
         st.markdown("#### 📦 3. Доставка и Фундамент")
         distance_km = st.number_input("Расстояние до объекта (км):", 0, 500, 60)
+
+        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
+
+        has_slope = st.checkbox("Участок с уклоном (перепад высот)", value=False)
 
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
 
@@ -1048,6 +1225,11 @@ with st.expander("🛠️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чт�
 
         address = st.text_input("Адрес объекта:", "КП Заповедник парк Совята уч 81")
         contact = st.text_input("Контактное лицо:", "Борис Борисович +7-912-297-11-79")
+        
+        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
+        st.markdown("**Менеджер проекта**")
+        manager_name = st.text_input("Имя менеджера:", "Иван Иванов")
+        manager_phone = st.text_input("Телефон менеджера:", "+7 (999) 000-00-00")
 
 # ============================================================
 # РАСЧЁТ
@@ -1066,17 +1248,24 @@ params = {
     "kalitka_count": kalitka_count if has_kalitka else 0,
     "has_otkatnye": has_otkatnye,
     "otkatnye_count": otkatnye_count if has_otkatnye else 0,
+    "has_avtomatika": has_avtomatika,
     "has_raspashnye": has_raspashnye,
     "raspashnye_count": raspashnye_count if has_raspashnye else 0,
     "stolb_type": stolb_type,
     "lag_rows": lag_rows,
+    "post_pitch": post_pitch,
+    "hole_depth": hole_depth,
+    "ground_distance": ground_distance,
     "distance_km": distance_km,
+    "has_slope": has_slope,
     "has_fundament": has_fundament,
     "fund_length": fund_length,
     "fund_width": fund_width,
     "fund_height": fund_height,
     "address": address,
     "contact": contact,
+    "manager_name": manager_name,
+    "manager_phone": manager_phone
 }
 
 result = calculate_fence(params, prices, proflist, shtaket)
@@ -1118,6 +1307,11 @@ with m4:
     """, unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
+
+if result.get("plot_bytes"):
+    st.markdown("### Схема расстановки столбов")
+    st.image(result["plot_bytes"], use_container_width=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
 # Таблицы
 tab_works, tab_materials, tab_all = st.tabs(["⚒️ Работы", "📦 Материалы", "📋 Полная калькуляция"])
@@ -1188,6 +1382,42 @@ with col_dl2:
         use_container_width=True,
         type="primary"
     )
+
+# ============================================================
+# CRM И ЭКСПОРТ (БИЗНЕС-БЛОК)
+# ============================================================
+st.markdown("---")
+st.markdown("### 💼 Интеграции и Сохранение")
+
+col_export, col_crm = st.columns(2)
+
+with col_export:
+    st.info("Экспорт данных проекта в формате JSON для интеграций или архива.")
+    export_json = json.dumps(params, ensure_ascii=False, indent=2)
+    st.download_button(
+        "💾 Сохранить проект (JSON)",
+        data=export_json,
+        file_name=f"project_fence_{datetime.date.today()}.json",
+        mime="application/json",
+        use_container_width=True
+    )
+
+with col_crm:
+    st.info("Отправка заявки в CRM-систему через Webhook (Битрикс24, amoCRM).")
+    crm_webhook = st.text_input("Webhook URL CRM:", placeholder="https://your-crm.bitrix24.ru/rest/...", label_visibility="collapsed")
+    if st.button("🚀 Отправить лид в CRM", use_container_width=True):
+        if crm_webhook:
+            try:
+                import requests
+                resp = requests.post(crm_webhook, json={"project_type": "fence", "data": params, "total": result["grand_total"]})
+                if resp.status_code in [200, 201]:
+                    st.success("✅ Заявка успешно отправлена в CRM!")
+                else:
+                    st.error(f"❌ Ошибка отправки: статус {resp.status_code}")
+            except Exception as e:
+                st.error(f"❌ Ошибка соединения: {e}")
+        else:
+            st.warning("⚠️ Введите URL Webhook")
 
 # ============================================================
 # РЕДАКТОР ЦЕН
