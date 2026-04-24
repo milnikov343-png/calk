@@ -70,6 +70,30 @@ DEFAULT_PRICES = {
     "Усилитель 0.5х51 (м.п.)": 220,
     "Профиль завершающий жалюзи (м.п.)": 230,
     "Заклёпка 4х10 (шт)": 3,
+    # --- Юнис ---
+    "Ламель Твинго (м.п.)": 500,
+    "Ламель Твинго Макс (м.п.)": 550,
+    "Ламель Твист (м.п.)": 480,
+    "Ламель Лина (м.п.)": 490,
+    "Ламель Виола (м.п.)": 495,
+    "Ламель Гамма (м.п.)": 510,
+    "Ламель Хард (м.п.)": 600,
+    # --- Локо ---
+    "Ламель Loko-60 Люкс (м.п.)": 450,
+    "Ламель Loko-60 Лайт (м.п.)": 400,
+    "Ламель Loko-80 Люкс (м.п.)": 480,
+    "Ламель Loko-80 Лайт (м.п.)": 430,
+    "Ламель Loko-100 Люкс (м.п.)": 500,
+    "Ламель Loko-100 Лайт (м.п.)": 450,
+    # --- Ранчо ---
+    "Доска Ранчо 60мм (м.п.)": 350,
+    "Доска Ранчо 80мм (м.п.)": 400,
+    "Доска Ранчо 100мм (м.п.)": 450,
+    "Доска Ранчо 120мм (м.п.)": 500,
+    "Доска Ранчо 150мм (м.п.)": 550,
+    "Доска Ранчо 190мм (м.п.)": 600,
+    "Доска Ранчо 200мм (м.п.)": 620,
+    "Доска Ранчо 250мм (м.п.)": 700,
 }
 
 # Финишные материалы — Профлист (цена за м2)
@@ -188,12 +212,18 @@ def calculate_fence(params, prices, proflist, shtaket):
         def calc_element_profile(el_length, el_height):
             nonlocal total_profile_area, total_sheets_count, total_screws
             el_area = el_length * max(0, el_height - ground_distance)
-            if material_type == "Жалюзи":
-                # Для жалюзи считаем количество ламелей в секции
+            if material_type in ["Жалюзи", "Юнис", "Локо"]:
+                # Для жалюзи/юнис/локо считаем количество ламелей в секции
                 jalousie_step = params.get("jalousie_step", 84)
                 slats = math.ceil(max(0, el_height - ground_distance) * 1000 / jalousie_step)
                 el_sheets = slats  # кол-во ламелей вместо листов
                 screws = 0  # крепёж заклёпками, не саморезами
+            elif material_type == "Ранчо":
+                rancho_w = params.get("rancho_w", 100) / 1000.0
+                gap_rancho = params.get("gap", 0.04)
+                # кол-во_досок = Math.round(высота / (ширина_доски + зазор))
+                el_sheets = round(max(0, el_height - ground_distance) / (rancho_w + gap_rancho))
+                screws = 0
             elif material_type == "Профнастил":
                 el_sheets = math.ceil(el_length / sheet_width)
                 screws_per_sheet = math.ceil(max(0, el_height - ground_distance) / 0.5) * 2
@@ -370,54 +400,66 @@ def calculate_fence(params, prices, proflist, shtaket):
     finish_price_total = 0
     jalousie_items = []  # доп. материалы жалюзи
     
-    if material_type == "Жалюзи":
-        jalousie_step = params.get("jalousie_step", 84)
-        jalousie_profile = params.get("jalousie_profile", "ROYAL Z")
-        
-        # Цена ламели зависит от профиля
-        lamel_price_keys = {
-            "ROYAL Z": "Ламель ROYAL Z (м.п.)",
-            "ELITE S-образная": "Ламель ELITE S-образная (м.п.)",
-            "LUXE V-образная": "Ламель LUXE V-образная (м.п.)",
-        }
-        lamel_price_mp = prices.get(lamel_price_keys.get(jalousie_profile, "Ламель ROYAL Z (м.п.)"), 420)
-        p_prof_holes_price = prices.get("П-профиль с перфорацией (м.п.)", 280)
-        p_prof_plain_price = prices.get("П-профиль без перфорации (м.п.)", 260)
-        reinforcer_price = prices.get("Усилитель 0.5х51 (м.п.)", 220)
-        finishing_prof_price = prices.get("Профиль завершающий жалюзи (м.п.)", 230)
-        rivet_price = prices.get("Заклёпка 4х10 (шт)", 3)
-        
+    if material_type in ["Жалюзи", "Юнис", "Локо", "Ранчо"]:
         # Количество секций и ширина секции
         if total_montazh_length > 0 and total_stolby > 0:
-            # Число пролётов между столбами
             num_sections_fence = max(total_stolby, 1)
             section_width = total_montazh_length / num_sections_fence
         else:
             num_sections_fence = 0
             section_width = post_pitch
-        
+            
         effective_height = max(0, fence_height - ground_distance)
-        slats_per_section = math.ceil(effective_height * 1000 / jalousie_step)
-        real_height = slats_per_section * jalousie_step / 1000
         lamella_length = max(0, section_width - 0.006)  # -6мм на П-профили
-        
+
+        if material_type == "Ранчо":
+            rancho_w_m = params.get("rancho_w", 100) / 1000.0
+            gap_rancho = params.get("gap", 0.04)
+            slats_per_section = round(effective_height / (rancho_w_m + gap_rancho))
+            real_height = effective_height
+            
+            item_desc = f"Доска {material_name}"
+            lamel_price_mp = prices.get(f"Доска {material_name} (м.п.)", 450)
+            jalousie_step = rancho_w_m * 1000  # для расчета ворот
+        else:
+            jalousie_step = params.get("jalousie_step", 84)
+            slats_per_section = math.ceil(effective_height * 1000 / jalousie_step)
+            real_height = slats_per_section * jalousie_step / 1000
+            
+            if material_type == "Жалюзи":
+                jalousie_profile = params.get("jalousie_profile", "ROYAL Z")
+                lamel_price_keys = {
+                    "ROYAL Z": "Ламель ROYAL Z (м.п.)",
+                    "ELITE S-образная": "Ламель ELITE S-образная (м.п.)",
+                    "LUXE V-образная": "Ламель LUXE V-образная (м.п.)",
+                }
+                lamel_price_mp = prices.get(lamel_price_keys.get(jalousie_profile, "Ламель ROYAL Z (м.п.)"), 420)
+                item_desc = f"Ламель {jalousie_profile} (шаг {jalousie_step}мм)"
+            else:
+                prof_name = material_name.replace("Юнис ", "").replace("Локо ", "")
+                lamel_price_mp = prices.get(f"Ламель {prof_name} (м.п.)", 500)
+                item_desc = f"Ламель {prof_name} (шаг {jalousie_step}мм)"
+
+        p_prof_holes_price = prices.get("П-профиль с перфорацией (м.п.)", 280)
+        p_prof_plain_price = prices.get("П-профиль без перфорации (м.п.)", 260)
+        reinforcer_price = prices.get("Усилитель 0.5х51 (м.п.)", 220)
+        finishing_prof_price = prices.get("Профиль завершающий жалюзи (м.п.)", 230)
+        rivet_price = prices.get("Заклёпка 4х10 (шт)", 3)
+
         total_slats = slats_per_section * num_sections_fence
         total_lamel_mp = round(total_slats * lamella_length, 2)
         lamel_total_cost = round(total_lamel_mp * lamel_price_mp)
         
-        # П-профиль с перфорацией (боковой) — 2 на каждую секцию, длина = реальная высота
         p_holes_qty = 2 * num_sections_fence
-        p_holes_length_each = real_height
+        p_holes_length_each = real_height if material_type != "Ранчо" else effective_height
         p_holes_mp = round(p_holes_qty * p_holes_length_each, 2)
         p_holes_cost = round(p_holes_mp * p_prof_holes_price)
         
-        # П-профиль без перфорации (верхний/завершающий) — 1 на секцию
         p_plain_qty = num_sections_fence
         p_plain_length_each = lamella_length
         p_plain_mp = round(p_plain_qty * p_plain_length_each, 2)
         p_plain_cost = round(p_plain_mp * p_prof_plain_price)
         
-        # Усилитель — если ширина секции > 2.5м: 1шт, если > 3.5м: 2шт
         reinf_per_section = 0
         if section_width > 3.5:
             reinf_per_section = 2
@@ -428,11 +470,9 @@ def calculate_fence(params, prices, proflist, shtaket):
         reinf_mp = round(reinf_qty * reinf_length, 2)
         reinf_cost = round(reinf_mp * reinforcer_price)
         
-        # Заклёпки: 4 на ламель (2 с каждой стороны) + 1% запас
         rivets_qty = math.ceil(total_slats * 4 * 1.01)
         rivets_cost = rivets_qty * rivet_price
         
-        # Профиль завершающий (верхний) — 1 на секцию, длина = ширина секции
         finish_prof_qty = num_sections_fence
         finish_prof_mp = round(finish_prof_qty * lamella_length, 2)
         finish_prof_cost = round(finish_prof_mp * finishing_prof_price)
@@ -440,7 +480,7 @@ def calculate_fence(params, prices, proflist, shtaket):
         finish_price_total = lamel_total_cost  # основной финишный материал
         
         jalousie_items = [
-            {"name": f"Ламель {jalousie_profile} (шаг {jalousie_step}мм)",
+            {"name": item_desc,
              "unit": "шт", "qty": total_slats, "mp": total_lamel_mp,
              "price_mp": lamel_price_mp, "total": lamel_total_cost},
             {"name": "П-профиль с перфорацией (боковой)",
@@ -449,10 +489,15 @@ def calculate_fence(params, prices, proflist, shtaket):
             {"name": "П-профиль без перфорации (верхний)",
              "unit": "шт", "qty": p_plain_qty, "mp": p_plain_mp,
              "price_mp": p_prof_plain_price, "total": p_plain_cost},
-            {"name": "Профиль завершающий жалюзи",
-             "unit": "шт", "qty": finish_prof_qty, "mp": finish_prof_mp,
-             "price_mp": finishing_prof_price, "total": finish_prof_cost},
         ]
+        
+        if material_type != "Ранчо":
+            jalousie_items.append(
+                {"name": "Профиль завершающий",
+                 "unit": "шт", "qty": finish_prof_qty, "mp": finish_prof_mp,
+                 "price_mp": finishing_prof_price, "total": finish_prof_cost}
+            )
+            
         if reinf_qty > 0:
             jalousie_items.append(
                 {"name": "Усилитель 0.5х51",
@@ -467,42 +512,44 @@ def calculate_fence(params, prices, proflist, shtaket):
         
         # Также считаем ламели в ворота/калитки
         gate_slats_total = 0
+        gate_step_mm = jalousie_step if material_type != "Ранчо" else (rancho_w_m + gap_rancho) * 1000
+
         if n_otkatnye > 0:
             gate_h = fence_height
-            gate_w = 4.0  # ширина откатных ворот
-            gate_slats = math.ceil(max(0, gate_h - ground_distance) * 1000 / jalousie_step)
+            gate_w = 4.0
+            gate_slats = round(max(0, gate_h - ground_distance) * 1000 / gate_step_mm) if material_type == "Ранчо" else math.ceil(max(0, gate_h - ground_distance) * 1000 / jalousie_step)
             gate_lamel_len = gate_w - 0.006
             gate_slats_n = gate_slats * n_otkatnye
             gate_mp = round(gate_slats_n * gate_lamel_len, 2)
             gate_slats_total += gate_slats_n
             jalousie_items.append(
-                {"name": f"Ламель {jalousie_profile} (ворота откатные {gate_w}м)",
+                {"name": f"{item_desc} (ворота откатные {gate_w}м)",
                  "unit": "шт", "qty": gate_slats_n, "mp": gate_mp,
                  "price_mp": lamel_price_mp, "total": round(gate_mp * lamel_price_mp)}
             )
         if n_raspashnye > 0:
             gate_h = fence_height
             gate_w = 4.0
-            gate_slats = math.ceil(max(0, gate_h - ground_distance) * 1000 / jalousie_step)
+            gate_slats = round(max(0, gate_h - ground_distance) * 1000 / gate_step_mm) if material_type == "Ранчо" else math.ceil(max(0, gate_h - ground_distance) * 1000 / jalousie_step)
             gate_lamel_len = gate_w - 0.006
             gate_slats_n = gate_slats * n_raspashnye
             gate_mp = round(gate_slats_n * gate_lamel_len, 2)
             gate_slats_total += gate_slats_n
             jalousie_items.append(
-                {"name": f"Ламель {jalousie_profile} (ворота распашные {gate_w}м)",
+                {"name": f"{item_desc} (ворота распашные {gate_w}м)",
                  "unit": "шт", "qty": gate_slats_n, "mp": gate_mp,
                  "price_mp": lamel_price_mp, "total": round(gate_mp * lamel_price_mp)}
             )
         if n_kalitka > 0:
             kal_h = fence_height
             kal_w = 1.0
-            kal_slats = math.ceil(max(0, kal_h - ground_distance) * 1000 / jalousie_step)
+            kal_slats = round(max(0, kal_h - ground_distance) * 1000 / gate_step_mm) if material_type == "Ранчо" else math.ceil(max(0, kal_h - ground_distance) * 1000 / jalousie_step)
             kal_lamel_len = kal_w - 0.006
             kal_slats_n = kal_slats * n_kalitka
             kal_mp = round(kal_slats_n * kal_lamel_len, 2)
             gate_slats_total += kal_slats_n
             jalousie_items.append(
-                {"name": f"Ламель {jalousie_profile} (калитка {kal_w}м)",
+                {"name": f"{item_desc} (калитка {kal_w}м)",
                  "unit": "шт", "qty": kal_slats_n, "mp": kal_mp,
                  "price_mp": lamel_price_mp, "total": round(kal_mp * lamel_price_mp)}
             )
@@ -1289,7 +1336,8 @@ with st.expander("🛠️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чт�
                             s_rasp_pos = st.text_input("Отступ (м):", "5", key=f"s_rasp_pos_{i}")
                     
                     st.markdown("**Материал для стороны:**")
-                    s_mat_type = st.radio(f"Тип:", ["Профнастил", "Штакет", "Шахматка", "Жалюзи"], horizontal=True, key=f"s_mat_type_{i}", label_visibility="collapsed")
+                    s_mat_type = st.radio(f"Тип:", ["Профнастил", "Штакет", "Шахматка", "Жалюзи", "Юнис", "Локо", "Ранчо"], horizontal=True, key=f"s_mat_type_{i}", label_visibility="collapsed")
+                    s_jalousie_step = 84
                     if s_mat_type == "Профнастил":
                         s_mat_name = st.selectbox(f"Профлист:", list(proflist.keys()), key=f"s_mat_name_{i}")
                         s_gap = 0.0
@@ -1297,6 +1345,22 @@ with st.expander("🛠️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чт�
                         s_jalousie_profile = st.radio("Профиль:", ["ROYAL Z", "ELITE S-образная", "LUXE V-образная"], horizontal=True, key=f"s_jal_prof_{i}")
                         s_mat_name = f"Жалюзи {s_jalousie_profile} полиэстер"
                         s_gap = 0.0
+                    elif s_mat_type == "Юнис":
+                        s_yunis_prof = st.selectbox("Профиль Юнис:", ["Твинго", "Твинго Макс", "Твист", "Лина", "Виола", "Гамма", "Хард"], key=f"s_yunis_prof_{i}")
+                        s_mat_name = f"Юнис {s_yunis_prof}"
+                        s_gap = 0.0
+                        yunis_steps = {"Твинго": 55, "Твинго Макс": 75, "Твист": 60, "Лина": 80, "Виола": 80.1, "Гамма": 90, "Хард": 125}
+                        s_jalousie_step = yunis_steps.get(s_yunis_prof, 55)
+                    elif s_mat_type == "Локо":
+                        s_loko_prof = st.selectbox("Профиль Локо:", ["Loko-60 Люкс", "Loko-60 Лайт", "Loko-80 Люкс", "Loko-80 Лайт", "Loko-100 Люкс", "Loko-100 Лайт"], key=f"s_loko_prof_{i}")
+                        s_mat_name = f"Локо {s_loko_prof}"
+                        s_gap = 0.0
+                        loko_steps = {"Loko-60 Люкс": 80, "Loko-60 Лайт": 95, "Loko-80 Люкс": 100, "Loko-80 Лайт": 115, "Loko-100 Люкс": 120, "Loko-100 Лайт": 135}
+                        s_jalousie_step = loko_steps.get(s_loko_prof, 80)
+                    elif s_mat_type == "Ранчо":
+                        s_rancho_w = st.selectbox("Ширина доски (мм):", [60, 80, 100, 120, 150, 190, 200, 250], key=f"s_rancho_w_{i}")
+                        s_mat_name = f"Ранчо {s_rancho_w}мм"
+                        s_gap = st.number_input("Зазор (м):", 0.01, 0.20, 0.04, step=0.01, key=f"s_gap_{i}")
                     else:
                         s_mat_name = st.selectbox(f"Штакет:", list(shtaket.keys()), key=f"s_mat_name_{i}")
                         s_gap = st.number_input("Зазор (м):", 0.01, 0.10, 0.04, step=0.01, key=f"s_gap_{i}")
@@ -1312,7 +1376,8 @@ with st.expander("🛠️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чт�
                         "raspashnye_pos": s_rasp_pos,
                         "material_type": s_mat_type,
                         "material_name": s_mat_name,
-                        "gap": s_gap
+                        "gap": s_gap,
+                        "jalousie_step": s_jalousie_step
                     })
             
             fence_length = sum(s["length"] for s in sides_data)
@@ -1323,9 +1388,10 @@ with st.expander("🛠️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чт�
 
         jalousie_step = 84  # дефолт
         jalousie_profile = "ROYAL Z"  # дефолт
+        rancho_w = 100
 
         if calc_mode == "express":
-            material_type = st.radio("Тип финишного материала:", ["Профнастил", "Штакет", "Шахматка", "Жалюзи"], horizontal=True)
+            material_type = st.radio("Тип финишного материала:", ["Профнастил", "Штакет", "Шахматка", "Жалюзи", "Юнис", "Локо", "Ранчо"], horizontal=True)
 
             if material_type == "Профнастил":
                 material_name = st.selectbox("Выберите профлист:", list(proflist.keys()))
@@ -1341,16 +1407,33 @@ with st.expander("🛠️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чт�
                     st.caption("Шаг ламелей: 84 мм")
                 material_name = f"Жалюзи {jalousie_profile} полиэстер"
                 gap_m = 0.0
+            elif material_type == "Юнис":
+                yunis_prof = st.selectbox("Профиль Юнис:", ["Твинго", "Твинго Макс", "Твист", "Лина", "Виола", "Гамма", "Хард"])
+                material_name = f"Юнис {yunis_prof}"
+                gap_m = 0.0
+                yunis_steps = {"Твинго": 55, "Твинго Макс": 75, "Твист": 60, "Лина": 80, "Виола": 80.1, "Гамма": 90, "Хард": 125}
+                jalousie_step = yunis_steps.get(yunis_prof, 55)
+            elif material_type == "Локо":
+                loko_prof = st.selectbox("Профиль Локо:", ["Loko-60 Люкс", "Loko-60 Лайт", "Loko-80 Люкс", "Loko-80 Лайт", "Loko-100 Люкс", "Loko-100 Лайт"])
+                material_name = f"Локо {loko_prof}"
+                gap_m = 0.0
+                loko_steps = {"Loko-60 Люкс": 80, "Loko-60 Лайт": 95, "Loko-80 Люкс": 100, "Loko-80 Лайт": 115, "Loko-100 Люкс": 120, "Loko-100 Лайт": 135}
+                jalousie_step = loko_steps.get(loko_prof, 80)
+            elif material_type == "Ранчо":
+                rancho_w = st.selectbox("Ширина доски (мм):", [60, 80, 100, 120, 150, 190, 200, 250])
+                material_name = f"Ранчо {rancho_w}мм"
+                gap_m = st.number_input("Зазор (м):", 0.01, 0.20, 0.04, step=0.01)
             else:
                 material_name = st.selectbox("Выберите штакет:", list(shtaket.keys()))
                 gap_m = st.number_input("Зазор между штакетинами (м):", 0.01, 0.10, 0.04, step=0.01)
         else:
             # Для детального режима материалы уже выбраны для каждой стороны,
             # но мы ставим заглушки для совместимости кода ниже
-            material_type = "Профнастил"
-            material_name = list(proflist.keys())[0]
-            gap_m = 0.0
-            jalousie_step = 84
+            material_type = sides_data[0]["material_type"] if sides_data else "Профнастил"
+            material_name = sides_data[0]["material_name"] if sides_data else list(proflist.keys())[0]
+            gap_m = sides_data[0]["gap"] if sides_data else 0.0
+            jalousie_step = sides_data[0].get("jalousie_step", 84) if sides_data else 84
+            rancho_w = 100
 
         color_ral = st.text_input("Цвет RAL:", "RAL 8017")
         fastener = st.selectbox("Способ крепления:", ["Саморез кровельный в цвет", "Саморез с пресс-шайбой"])
@@ -1425,6 +1508,9 @@ params = {
     "material_type": material_type,
     "material_name": material_name,
     "gap": gap_m,
+    "jalousie_step": jalousie_step,
+    "jalousie_profile": jalousie_profile,
+    "rancho_w": rancho_w,
     "fastener": fastener,
     "color_ral": color_ral,
     "has_kalitka": has_kalitka,
