@@ -1579,7 +1579,7 @@ div[data-testid="stExpander"] details summary p {{
 """, unsafe_allow_html=True)
 
 # --- Загрузка цен ---
-prices, proflist, shtaket = load_prices()
+prices, proflist, shtaket, parsed_data = load_prices()
 
 # --- HEADER ---
 with st.container():
