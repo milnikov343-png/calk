@@ -94,6 +94,19 @@ DEFAULT_PRICES = {
     "Доска Ранчо 190мм (м.п.)": 600,
     "Доска Ранчо 200мм (м.п.)": 620,
     "Доска Ранчо 250мм (м.п.)": 700,
+    # --- Кирпичные столбы ---
+    "Кирпич полуторный (шт)": 22,
+    "Кирпич одинарный (шт)": 16,
+    "Раствор кладочный (мешок 25кг)": 350,
+    "Колпак металлический на столб": 450,
+    "Колпак полимерно-песчаный на столб": 350,
+    # --- Парапеты ---
+    "Парапет прямой (м.п.)": 650,
+    "Парапет угольный (м.п.)": 750,
+    # --- Лага альтернативная ---
+    "Лага заборная 40х20х2мм": 420,
+    # --- Забутовка ---
+    "Щебень для забутовки (мешок 50кг)": 170,
 }
 
 # Финишные материалы — Профлист (цена за м2)
@@ -182,16 +195,28 @@ def calculate_fence(params, prices, proflist, shtaket):
     color_ral = params["color_ral"]
 
     stolb_type = params["stolb_type"]
+    post_type = params.get("post_type", "metal")  # metal / brick / polish
     lag_rows = params["lag_rows"]
+    lag_pipe_type = params.get("lag_pipe_type", "40x20x1.5")
     distance_km = params["distance_km"]
     post_pitch = params.get("post_pitch", 3.0)
     hole_depth = params.get("hole_depth", 1.5)
+    hole_diameter = params.get("hole_diameter", 0.2)
     ground_distance = params.get("ground_distance", 0.05)
+    foundation_type = params.get("foundation_type", "concrete")  # concrete / crushedStone / driving
+    brick_type = params.get("brick_type", "полуторный")
+    brick_seam = params.get("brick_seam", 10)  # мм
+    cap_type = params.get("cap_type", "none")  # none / metal / polymer
 
     has_fundament = params["has_fundament"]
     fund_length = params["fund_length"]
     fund_width = params["fund_width"]
     fund_height = params["fund_height"]
+
+    # Парапеты
+    has_parapet = params.get("has_parapet", False)
+    parapet_form = params.get("parapet_form", "прямая")
+    parapet_length = params.get("parapet_length", 0)
 
     address = params["address"]
     contact = params["contact"]
@@ -213,15 +238,13 @@ def calculate_fence(params, prices, proflist, shtaket):
             nonlocal total_profile_area, total_sheets_count, total_screws
             el_area = el_length * max(0, el_height - ground_distance)
             if material_type in ["Жалюзи", "Юнис", "Локо"]:
-                # Для жалюзи/юнис/локо считаем количество ламелей в секции
                 jalousie_step = params.get("jalousie_step", 84)
                 slats = math.ceil(max(0, el_height - ground_distance) * 1000 / jalousie_step)
-                el_sheets = slats  # кол-во ламелей вместо листов
-                screws = 0  # крепёж заклёпками, не саморезами
+                el_sheets = slats
+                screws = 0
             elif material_type == "Ранчо":
                 rancho_w = params.get("rancho_w", 100) / 1000.0
                 gap_rancho = params.get("gap", 0.04)
-                # кол-во_досок = Math.round(высота / (ширина_доски + зазор))
                 el_sheets = round(max(0, el_height - ground_distance) / (rancho_w + gap_rancho))
                 screws = 0
             elif material_type == "Профнастил":
@@ -233,7 +256,7 @@ def calculate_fence(params, prices, proflist, shtaket):
                 sh_width = sh_data["width_m"]
                 el_sheets = math.ceil(el_length / (sh_width + gap))
                 screws = el_sheets * 4
-            else: # Шахматка
+            else:  # Шахматка
                 sh_data = shtaket.get(material_name, {"price": 55, "width_m": 0.1})
                 sh_width = sh_data["width_m"]
                 el_sheets = math.ceil(el_length / (sh_width + gap)) * 2
@@ -251,33 +274,79 @@ def calculate_fence(params, prices, proflist, shtaket):
         for item in gates_and_doors:
             available_length -= item["width"]
             gate_door_count += 1
-            extra80_posts += 2  # 2 столба 80х80 на проем
+            extra80_posts += 2
             calc_element_profile(item["width"], height)
 
         available_length = max(0, available_length)
-        
-        # Расчет секций
-        if available_length > 0:
-            section_count = math.ceil(available_length / post_pitch)
-        else:
-            section_count = 0
-            
-        post_count = max(0, section_count + 1 - gate_door_count)
-        if available_length == 0:
-            post_count = 0
-            
-        lag_total_count = section_count * lag_rows
-        
-        if available_length > 0:
+
+        # --- Кирпичные столбы (логика из JS results.js:120-164) ---
+        total_bricks = 0
+        bricks_per_post = 0
+        rows_per_post = 0
+        actual_section_width = 0
+
+        if post_type == 'brick':
+            post_count = math.ceil(length / post_pitch) + 1
+            sections = max(0, post_count - 1)
+            total_brick_width = post_count * 0.385  # ширина кирпичного столба 385мм
+            free_space = length - total_brick_width
+
+            # Расчёт кирпичей
+            brick_h = 0.088 if brick_type == 'полуторный' else 0.065
+            seam_m = brick_seam / 1000.0
+            post_height = height + (hole_depth or 0)
+            rows_per_post = math.ceil(post_height / (brick_h + seam_m))
+            bricks_per_row = 4
+            bricks_per_post = rows_per_post * bricks_per_row
+            total_bricks = bricks_per_post * post_count
+
+            # Лаги — только если есть свободное пространство
+            if free_space > 0 and sections > 0:
+                actual_section_width = free_space / sections
+                lag_total_count = sections * lag_rows
+            else:
+                actual_section_width = 0
+                lag_total_count = 0
+
+            # Профнастил для всей длины
             calc_element_profile(available_length, height)
-            
+            for item in gates_and_doors:
+                calc_element_profile(item["width"], height)
+
+        else:
+            # Металлические столбы (существующая логика)
+            if available_length > 0:
+                section_count = math.ceil(available_length / post_pitch)
+            else:
+                section_count = 0
+
+            post_count = max(0, section_count + 1 - gate_door_count)
+            if available_length == 0:
+                post_count = 0
+
+            lag_total_count = section_count * lag_rows
+
+            if available_length > 0:
+                calc_element_profile(available_length, height)
+
         # Саморезы для лаг
         total_screws += lag_total_count * 2
 
-        # Объем бетона (в м3) на лунки
-        radius = 0.3 / 2  # диаметр 300мм
+        # --- Закрепление столбов (бетон / забутовка / вбивание) ---
+        radius = hole_diameter / 2
         one_hole_vol = math.pi * radius * radius * hole_depth
-        concrete_vol = one_hole_vol * (post_count + extra80_posts)
+        total_posts_for_holes = post_count + (extra80_posts if post_type == 'metal' else 0)
+
+        concrete_vol = 0
+        crushed_stone_vol = 0
+        crushed_stone_weight = 0
+
+        if foundation_type == 'concrete':
+            concrete_vol = one_hole_vol * total_posts_for_holes
+        elif foundation_type == 'crushedStone':
+            crushed_stone_vol = one_hole_vol * total_posts_for_holes
+            crushed_stone_weight = crushed_stone_vol * 1400  # кг (1.4 т/м3)
+        # driving — ничего не нужно
 
         return {
             "post_count": post_count,
@@ -287,7 +356,12 @@ def calculate_fence(params, prices, proflist, shtaket):
             "sheets_count": total_sheets_count,
             "total_screws": total_screws,
             "concrete_vol": concrete_vol,
-            "montazh_length": available_length
+            "crushed_stone_vol": crushed_stone_vol,
+            "crushed_stone_weight": crushed_stone_weight,
+            "montazh_length": available_length,
+            "total_bricks": total_bricks,
+            "bricks_per_post": bricks_per_post,
+            "rows_per_post": rows_per_post,
         }
 
     # Сбор данных
@@ -297,12 +371,30 @@ def calculate_fence(params, prices, proflist, shtaket):
     total_finish_qty = 0
     total_screws = 0
     total_concrete_vol = 0
+    total_crushed_stone_vol = 0
+    total_crushed_stone_weight = 0
     total_montazh_length = 0
+    total_bricks = 0
 
     n_kalitka = 0
     n_otkatnye = 0
     n_raspashnye = 0
     fence_length_total = 0
+
+    def _accumulate(res):
+        nonlocal total_stolby, total_stolby_vorota, total_lagi, total_finish_qty
+        nonlocal total_screws, total_concrete_vol, total_crushed_stone_vol
+        nonlocal total_crushed_stone_weight, total_montazh_length, total_bricks
+        total_stolby += res["post_count"]
+        total_stolby_vorota += res["extra80_posts"]
+        total_lagi += res["lag_total_count"]
+        total_finish_qty += res["sheets_count"]
+        total_screws += res["total_screws"]
+        total_concrete_vol += res["concrete_vol"]
+        total_crushed_stone_vol += res.get("crushed_stone_vol", 0)
+        total_crushed_stone_weight += res.get("crushed_stone_weight", 0)
+        total_montazh_length += res["montazh_length"]
+        total_bricks += res.get("total_bricks", 0)
 
     if calc_mode == "detailed":
         sides_data = params.get("sides_data", [])
@@ -318,13 +410,7 @@ def calculate_fence(params, prices, proflist, shtaket):
             for _ in range(s["raspashnye_count"]): g_d.append({"type": "gate", "width": 4.0})
             
             res = calc_side(s["length"], fence_height, g_d)
-            total_stolby += res["post_count"]
-            total_stolby_vorota += res["extra80_posts"]
-            total_lagi += res["lag_total_count"]
-            total_finish_qty += res["sheets_count"]
-            total_screws += res["total_screws"]
-            total_concrete_vol += res["concrete_vol"]
-            total_montazh_length += res["montazh_length"]
+            _accumulate(res)
     else:
         fence_length_total = params.get("fence_length", 0)
         has_kalitka = params.get("has_kalitka", False)
@@ -340,13 +426,7 @@ def calculate_fence(params, prices, proflist, shtaket):
         for _ in range(n_raspashnye): g_d.append({"type": "gate", "width": 4.0})
         
         res = calc_side(fence_length_total, fence_height, g_d)
-        total_stolby = res["post_count"]
-        total_stolby_vorota = res["extra80_posts"]
-        total_lagi = res["lag_total_count"]
-        total_finish_qty = res["sheets_count"]
-        total_screws = res["total_screws"]
-        total_concrete_vol = res["concrete_vol"]
-        total_montazh_length = res["montazh_length"]
+        _accumulate(res)
 
     # --- Цены установки/монтажа ---
     import math
@@ -708,12 +788,34 @@ def calculate_fence(params, prices, proflist, shtaket):
             "price": fastener_price,
             "total": round(samorez_qty * fastener_price)
         })
-    materials.append({
-        "name": f"Столб заборный {stolb_type}",
-        "unit": "шт", "qty": total_stolby,
-        "price": stolb_price_per_mp,
-        "total": total_stolby * stolb_price_per_mp
-    })
+    # --- Столбы ---
+    if post_type == 'brick':
+        # Кирпичные столбы
+        brick_price_key = f"Кирпич {'полуторный' if brick_type == 'полуторный' else 'одинарный'} (шт)"
+        brick_price = prices.get(brick_price_key, 22 if brick_type == 'полуторный' else 16)
+        materials.append({
+            "name": f"Кирпич {brick_type} для столбов",
+            "unit": "шт", "qty": total_bricks,
+            "price": brick_price,
+            "total": total_bricks * brick_price
+        })
+        # Раствор: ~25кг на 50 кирпичей
+        mortar_bags = math.ceil(total_bricks / 50)
+        mortar_price = prices.get("Раствор кладочный (мешок 25кг)", 350)
+        materials.append({
+            "name": "Раствор кладочный (мешок 25кг)",
+            "unit": "мешок", "qty": mortar_bags,
+            "price": mortar_price,
+            "total": mortar_bags * mortar_price
+        })
+    else:
+        # Металлические столбы
+        materials.append({
+            "name": f"Столб заборный {stolb_type}",
+            "unit": "шт", "qty": total_stolby,
+            "price": stolb_price_per_mp,
+            "total": total_stolby * stolb_price_per_mp
+        })
     
     if total_stolby_vorota > 0:
         stolb_vor_price = prices.get("Столб под ворота 80х80х3000", 1275)
@@ -722,6 +824,25 @@ def calculate_fence(params, prices, proflist, shtaket):
             "unit": "шт", "qty": total_stolby_vorota,
             "price": stolb_vor_price,
             "total": total_stolby_vorota * stolb_vor_price
+        })
+
+    # --- Колпаки на столбы ---
+    total_posts_all = total_stolby + total_stolby_vorota
+    if cap_type == "metal" and total_posts_all > 0:
+        cap_price = prices.get("Колпак металлический на столб", 450)
+        materials.append({
+            "name": "Колпак металлический на столб",
+            "unit": "шт", "qty": total_posts_all,
+            "price": cap_price,
+            "total": total_posts_all * cap_price
+        })
+    elif cap_type == "polymer" and total_posts_all > 0:
+        cap_price = prices.get("Колпак полимерно-песчаный на столб", 350)
+        materials.append({
+            "name": "Колпак полимерно-песчаный на столб",
+            "unit": "шт", "qty": total_posts_all,
+            "price": cap_price,
+            "total": total_posts_all * cap_price
         })
 
     materials.append({
@@ -736,30 +857,65 @@ def calculate_fence(params, prices, proflist, shtaket):
         "price": prices.get("Краска грунт-эмаль 3в1", 2200),
         "total": kraska_cans * prices.get("Краска грунт-эмаль 3в1", 2200)
     })
+
+    # --- Лаги (выбор типа трубы) ---
+    if lag_pipe_type == "40x20x2":
+        lag_price_key = "Лага заборная 40х20х2мм"
+        lag_name = "Лага заборная 40х20х2мм"
+        lag_price_default = 420
+    else:
+        lag_price_key = "Лага заборная 40х20х3000мм"
+        lag_name = "Лага заборная 40х20х1.5мм"
+        lag_price_default = 362
     materials.append({
-        "name": "Лага заборная 40х20х3000мм",
+        "name": lag_name,
         "unit": "шт", "qty": total_lagi,
-        "price": prices.get("Лага заборная 40х20х3000мм", 362),
-        "total": total_lagi * prices.get("Лага заборная 40х20х3000мм", 362)
+        "price": prices.get(lag_price_key, lag_price_default),
+        "total": total_lagi * prices.get(lag_price_key, lag_price_default)
     })
-    materials.append({
-        "name": "Цемент (мешок 50кг)",
-        "unit": "мешок", "qty": cement_bags,
-        "price": prices.get("Цемент (мешок 50кг)", 550),
-        "total": cement_bags * prices.get("Цемент (мешок 50кг)", 550)
-    })
-    materials.append({
-        "name": "Щебень (мешок 50кг)",
-        "unit": "мешок", "qty": scheben_bags,
-        "price": prices.get("Щебень (мешок 50кг)", 170),
-        "total": scheben_bags * prices.get("Щебень (мешок 50кг)", 170)
-    })
-    materials.append({
-        "name": "Отсев (мешок 50кг)",
-        "unit": "мешок", "qty": otsev_bags,
-        "price": prices.get("Отсев (мешок 50кг)", 170),
-        "total": otsev_bags * prices.get("Отсев (мешок 50кг)", 170)
-    })
+
+    # --- Закрепление столбов: бетон / забутовка / вбивание ---
+    if foundation_type == 'concrete':
+        materials.append({
+            "name": "Цемент (мешок 50кг)",
+            "unit": "мешок", "qty": cement_bags,
+            "price": prices.get("Цемент (мешок 50кг)", 550),
+            "total": cement_bags * prices.get("Цемент (мешок 50кг)", 550)
+        })
+        materials.append({
+            "name": "Щебень (мешок 50кг)",
+            "unit": "мешок", "qty": scheben_bags,
+            "price": prices.get("Щебень (мешок 50кг)", 170),
+            "total": scheben_bags * prices.get("Щебень (мешок 50кг)", 170)
+        })
+        materials.append({
+            "name": "Отсев (мешок 50кг)",
+            "unit": "мешок", "qty": otsev_bags,
+            "price": prices.get("Отсев (мешок 50кг)", 170),
+            "total": otsev_bags * prices.get("Отсев (мешок 50кг)", 170)
+        })
+    elif foundation_type == 'crushedStone':
+        # Забутовка — щебень вместо бетона
+        butovka_bags = math.ceil(total_crushed_stone_weight / 50)  # мешки по 50кг
+        butovka_price = prices.get("Щебень для забутовки (мешок 50кг)", 170)
+        materials.append({
+            "name": "Щебень для забутовки (мешок 50кг)",
+            "unit": "мешок", "qty": butovka_bags,
+            "price": butovka_price,
+            "total": butovka_bags * butovka_price
+        })
+    # foundation_type == 'driving' — ничего не добавляем
+
+    # --- Парапеты ---
+    if has_parapet and parapet_length > 0:
+        parapet_price_key = f"Парапет {'прямой' if parapet_form == 'прямая' else 'угольный'} (м.п.)"
+        parapet_price = prices.get(parapet_price_key, 650 if parapet_form == 'прямая' else 750)
+        materials.append({
+            "name": f"Парапет {parapet_form} (м.п.)",
+            "unit": "м.п.", "qty": round(parapet_length, 1),
+            "price": parapet_price,
+            "total": round(parapet_length * parapet_price)
+        })
 
     if n_otkatnye > 0:
         otk_price = prices.get("Ворота откатные со швеллером балкой и роликами", 24000)
@@ -1474,13 +1630,44 @@ with st.expander("⚙️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, что
 
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
 
-        stolb_type = st.selectbox("Тип столбов:", ["60х60х2мм", "73мм НКТ", "60х40х2мм", "80х80х2мм"])
+        # --- Тип столбов ---
+        post_type = st.selectbox("Тип столбов:", ["Металлические", "Кирпичные"], key="post_type_sel")
+        post_type_val = "brick" if post_type == "Кирпичные" else "metal"
+
+        if post_type_val == "metal":
+            stolb_type = st.selectbox("Труба для столбов:", ["60х60х2мм", "73мм НКТ", "60х40х2мм", "80х80х2мм"])
+            brick_type_val = "полуторный"
+            brick_seam_val = 10
+        else:
+            stolb_type = "60х60х2мм"  # Внутри кирпичных — арматура, для расчёта неважно
+            brick_type = st.selectbox("Тип кирпича:", ["Полуторный", "Одинарный"], key="brick_type_sel")
+            brick_type_val = "полуторный" if brick_type == "Полуторный" else "одинарный"
+            brick_seam = st.selectbox("Толщина шва:", ["10 мм", "8 мм"], key="brick_seam_sel")
+            brick_seam_val = 10 if brick_seam == "10 мм" else 8
+
+        # --- Тип трубы для лаг ---
+        lag_pipe_type = st.selectbox("Труба для лаг:", ["40x20x1.5 мм", "40x20x2 мм"], key="lag_pipe_sel")
+        lag_pipe_val = "40x20x2" if "2 мм" in lag_pipe_type else "40x20x1.5"
         lag_rows = st.radio("Количество рядов лаг:", [2, 3], horizontal=True)
-        
+
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
+
+        # --- Закрепление столбов ---
+        foundation_type_label = st.selectbox("Закрепление столбов:", ["Бетонирование", "Забутовка (щебень)", "Вбивание"], key="found_type_sel")
+        foundation_type_map = {"Бетонирование": "concrete", "Забутовка (щебень)": "crushedStone", "Вбивание": "driving"}
+        foundation_type_val = foundation_type_map[foundation_type_label]
+
         post_pitch = st.number_input("Шаг столбов (м):", 1.0, 5.0, 3.0, step=0.1)
         hole_depth = st.number_input("Глубина бурения (м):", 0.5, 3.0, 1.5, step=0.1)
+        hole_diameter = st.number_input("Диаметр лунок (м):", 0.1, 0.6, 0.2, step=0.05)
         ground_distance = st.number_input("Зазор снизу (м):", 0.0, 0.5, 0.05, step=0.01)
+
+        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
+
+        # --- Колпаки ---
+        cap_choice = st.selectbox("Колпаки на столбы:", ["Без колпаков", "Металлические", "Полимерно-песчаные"], key="cap_sel")
+        cap_map = {"Без колпаков": "none", "Металлические": "metal", "Полимерно-песчаные": "polymer"}
+        cap_type_val = cap_map[cap_choice]
 
     with c3:
         st.markdown("#### 🚚 3. Доставка и Фундамент")
@@ -1499,6 +1686,18 @@ with st.expander("⚙️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, что
             fund_height = st.number_input("Высота фундамента (м):", 0.1, 2.0, 0.6, step=0.1)
         else:
             fund_length = fund_width = fund_height = 0
+
+        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
+
+        # --- Парапеты ---
+        has_parapet = st.checkbox("Парапеты на фундамент", value=False)
+        if has_parapet:
+            parapet_form = st.selectbox("Форма парапета:", ["Прямая", "Угольная"], key="parapet_form_sel")
+            parapet_form_val = "прямая" if parapet_form == "Прямая" else "угольная"
+            parapet_length = st.number_input("Длина парапетов (м.п.):", 0.0, 500.0, fund_length if has_fundament else 0.0, step=1.0)
+        else:
+            parapet_form_val = "прямая"
+            parapet_length = 0
 
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
 
@@ -1534,16 +1733,26 @@ params = {
     "has_raspashnye": has_raspashnye,
     "raspashnye_count": raspashnye_count if has_raspashnye else 0,
     "stolb_type": stolb_type,
+    "post_type": post_type_val,
     "lag_rows": lag_rows,
+    "lag_pipe_type": lag_pipe_val,
     "post_pitch": post_pitch,
     "hole_depth": hole_depth,
+    "hole_diameter": hole_diameter,
     "ground_distance": ground_distance,
+    "foundation_type": foundation_type_val,
+    "brick_type": brick_type_val if post_type_val == "brick" else "полуторный",
+    "brick_seam": brick_seam_val if post_type_val == "brick" else 10,
+    "cap_type": cap_type_val,
     "distance_km": distance_km,
     "has_slope": has_slope,
     "has_fundament": has_fundament,
     "fund_length": fund_length,
     "fund_width": fund_width,
     "fund_height": fund_height,
+    "has_parapet": has_parapet,
+    "parapet_form": parapet_form_val if has_parapet else "прямая",
+    "parapet_length": parapet_length if has_parapet else 0,
     "address": address,
     "contact": contact,
     "manager_name": manager_name,
