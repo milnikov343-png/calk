@@ -7,11 +7,16 @@ from fpdf import FPDF
 import io
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import pandas as pd
+import urllib.request
+import csv
+import ssl
 
 # ============================================================
 # КОНФИГУРАЦИЯ
 # ============================================================
 PRICES_FILE = os.path.join(os.path.dirname(__file__), "fence_prices.json")
+PARSED_PRICES_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "parsed_prices.json")
 
 # Цены по умолчанию (из Excel «Цены»)
 DEFAULT_PRICES = {
@@ -153,39 +158,132 @@ DEFAULT_SHTAKET = {
 
 
 # ============================================================
-# РАБОТА С ЦЕНАМИ (JSON)
+# РАБОТА С ЦЕНАМИ (ИЗ GOOGLE ТАБЛИЦ)
 # ============================================================
+@st.cache_data(ttl=300)
 def load_prices():
-    """Загружает цены из JSON, если файла нет — использует дефолтные."""
-    if os.path.exists(PRICES_FILE):
-        try:
-            with open(PRICES_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            # Мержим с дефолтами (если добавились новые позиции)
-            prices = {**DEFAULT_PRICES, **data.get("prices", {})}
-            proflist = {**DEFAULT_PROFLIST, **data.get("proflist", {})}
-            shtaket = {}
-            for k, v in DEFAULT_SHTAKET.items():
-                shtaket[k] = {**v}
-            for k, v in data.get("shtaket", {}).items():
-                shtaket[k] = v
-            return prices, proflist, shtaket
-        except Exception:
-            pass
-    return dict(DEFAULT_PRICES), dict(DEFAULT_PROFLIST), {k: dict(v) for k, v in DEFAULT_SHTAKET.items()}
+    """Загружает цены из Google Sheets или локального JSON кэша."""
+    URL_TEMPLATE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRgxTJ2JPrhh_da9pEBWMoKU3iT5x0DZkzKmKrOKcJBbAos8XmYJDzJyHKvcTtAfPrcpMKDzHW4AWG6/pub?gid={}&single=true&output=csv"
+    
+    GIDS = {
+        "picket": "1377691245",
+        "steel_kit": "536451623",
+        "loko": "1979117334",
+        "rancho": "72041066",
+        "yunis": "1064450846",
+        "royal_vip": "1042582915",
+        "works": "837530591"
+    }
+    
+    parsed_data = {}
+    fetch_success = False
+    try:
+        context = ssl._create_unverified_context()
+        for name, gid in GIDS.items():
+            url = URL_TEMPLATE.format(gid)
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=context) as response:
+                content = response.read().decode('utf-8')
+                reader = csv.reader(io.StringIO(content))
+                sheet_data = list(reader)
+                
+                if name == "works":
+                    works_data = {"standard": [], "premium": [], "additional": []}
+                    for row in sheet_data[1:]: # Skip header
+                        if len(row) >= 4 and row[0].strip():
+                            try:
+                                works_data["standard"].append({
+                                    "range": row[0].strip(),
+                                    "prof_2lag": float(row[1].strip().replace(',', '.')),
+                                    "prof_3lag": float(row[2].strip().replace(',', '.')),
+                                    "shtaket_2side": float(row[3].strip().replace(',', '.'))
+                                })
+                            except ValueError:
+                                pass
+                        if len(row) >= 6 and row[4].strip():
+                            try:
+                                works_data["premium"].append({
+                                    "range": row[4].strip(),
+                                    "price": float(row[5].strip().replace(',', '.'))
+                                })
+                            except ValueError:
+                                pass
+                        if len(row) >= 9 and row[6].strip() and row[8].strip():
+                            try:
+                                works_data["additional"].append({
+                                    "name": row[6].strip(),
+                                    "unit": row[7].strip(),
+                                    "price": float(row[8].strip().replace(',', '.'))
+                                })
+                            except ValueError:
+                                pass
+                    parsed_data[name] = works_data
+                else:
+                    items = []
+                    for row in sheet_data:
+                        if len(row) >= 3:
+                            item_name = row[0].strip()
+                            item_cat = row[1].strip()
+                            item_price = row[2].strip()
+                            if item_name and item_price:
+                                try:
+                                    items.append({
+                                        "name": item_name,
+                                        "category": item_cat,
+                                        "price": float(item_price.replace(',', '.'))
+                                    })
+                                except ValueError:
+                                    pass
+                    parsed_data[name] = items
+        fetch_success = True
+        
+        # Кэшируем локально
+        os.makedirs(os.path.dirname(PARSED_PRICES_FILE), exist_ok=True)
+        with open(PARSED_PRICES_FILE, "w", encoding="utf-8") as f:
+            json.dump(parsed_data, f, ensure_ascii=False, indent=2)
+            
+    except Exception as e:
+        print(f"Failed to fetch prices: {e}")
+        # Если не удалось скачать, пытаемся загрузить из кэша
+        if os.path.exists(PARSED_PRICES_FILE):
+            with open(PARSED_PRICES_FILE, "r", encoding="utf-8") as f:
+                parsed_data = json.load(f)
 
+    # Мержим с дефолтами
+    prices = {**DEFAULT_PRICES}
+    proflist = {**DEFAULT_PROFLIST}
+    shtaket = {}
+    for k, v in DEFAULT_SHTAKET.items():
+        shtaket[k] = {**v}
+        
+    # Инъекция динамических цен
+    if parsed_data:
+        for k in ["steel_kit", "loko", "rancho", "yunis", "royal_vip"]:
+            if k in parsed_data:
+                for item in parsed_data[k]:
+                    prices[item["name"]] = item["price"]
+        
+        if "picket" in parsed_data:
+            for item in parsed_data["picket"]:
+                # Пытаемся вытащить ширину штакетины (например из "Штакет ... 100мм" -> 0.100)
+                # По дефолту ставим 0.100
+                width_m = 0.100
+                import re
+                match = re.search(r'(\d+)', item["name"])
+                if match:
+                    width_m = int(match.group(1)) / 1000.0
+                shtaket[item["name"]] = {"price": item["price"], "width_m": width_m}
+                
+    return prices, proflist, shtaket, parsed_data
 
 def save_prices(prices, proflist, shtaket):
-    """Сохраняет текущие цены в JSON."""
-    data = {"prices": prices, "proflist": proflist, "shtaket": shtaket}
-    with open(PRICES_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    pass # Сохранение в JSON больше не используется напрямую
 
 
 # ============================================================
 # РАСЧЕТЫ (все формулы из Excel)
 # ============================================================
-def calculate_fence(params, prices, proflist, shtaket):
+def calculate_fence(params, prices, proflist, shtaket, parsed_data):
     calc_mode = params.get("calc_mode", "express")
     fence_height = params["fence_height"]
     material_type = params["material_type"]
@@ -376,9 +474,9 @@ def calculate_fence(params, prices, proflist, shtaket):
     total_montazh_length = 0
     total_bricks = 0
 
-    n_kalitka = 0
-    n_otkatnye = 0
-    n_raspashnye = 0
+    kalitki_dict = {}
+    otkatnye_dict = {}
+    raspashnye_dict = {}
     fence_length_total = 0
 
     def _accumulate(res):
@@ -400,69 +498,101 @@ def calculate_fence(params, prices, proflist, shtaket):
         sides_data = params.get("sides_data", [])
         for s in sides_data:
             fence_length_total += s["length"]
-            n_kalitka += s["kalitka_count"]
-            n_otkatnye += s["otkatnye_count"]
-            n_raspashnye += s["raspashnye_count"]
+            if s.get("kalitka_count", 0) > 0:
+                t = s.get("kalitka_type", "Калитка стандарт")
+                kalitki_dict[t] = kalitki_dict.get(t, 0) + s["kalitka_count"]
+            if s.get("otkatnye_count", 0) > 0:
+                t = s.get("otkatnye_type", "Ворота откатные стандарт")
+                otkatnye_dict[t] = otkatnye_dict.get(t, 0) + s["otkatnye_count"]
+            if s.get("raspashnye_count", 0) > 0:
+                t = s.get("raspashnye_type", "Ворота распашные стандарт")
+                raspashnye_dict[t] = raspashnye_dict.get(t, 0) + s["raspashnye_count"]
             
             g_d = []
-            for _ in range(s["kalitka_count"]): g_d.append({"type": "door", "width": 1.0})
-            for _ in range(s["otkatnye_count"]): g_d.append({"type": "gate", "width": 4.0})
-            for _ in range(s["raspashnye_count"]): g_d.append({"type": "gate", "width": 4.0})
+            for _ in range(s.get("kalitka_count", 0)): g_d.append({"type": "door", "width": 1.0})
+            for _ in range(s.get("otkatnye_count", 0)): g_d.append({"type": "gate", "width": 4.0})
+            for _ in range(s.get("raspashnye_count", 0)): g_d.append({"type": "gate", "width": 4.0})
             
             res = calc_side(s["length"], fence_height, g_d)
             _accumulate(res)
     else:
         fence_length_total = params.get("fence_length", 0)
         has_kalitka = params.get("has_kalitka", False)
-        n_kalitka = params.get("kalitka_count", 0) if has_kalitka else 0
+        if has_kalitka and params.get("kalitka_count", 0) > 0:
+            kalitki_dict[params.get("kalitka_type", "Калитка стандарт")] = params["kalitka_count"]
+            
         has_otkatnye = params.get("has_otkatnye", False)
-        n_otkatnye = params.get("otkatnye_count", 0) if has_otkatnye else 0
+        if has_otkatnye and params.get("otkatnye_count", 0) > 0:
+            otkatnye_dict[params.get("otkatnye_type", "Ворота откатные стандарт")] = params["otkatnye_count"]
+            
         has_raspashnye = params.get("has_raspashnye", False)
-        n_raspashnye = params.get("raspashnye_count", 0) if has_raspashnye else 0
+        if has_raspashnye and params.get("raspashnye_count", 0) > 0:
+            raspashnye_dict[params.get("raspashnye_type", "Ворота распашные стандарт")] = params["raspashnye_count"]
         
         g_d = []
-        for _ in range(n_kalitka): g_d.append({"type": "door", "width": 1.0})
-        for _ in range(n_otkatnye): g_d.append({"type": "gate", "width": 4.0})
-        for _ in range(n_raspashnye): g_d.append({"type": "gate", "width": 4.0})
+        for _ in range(sum(kalitki_dict.values())): g_d.append({"type": "door", "width": 1.0})
+        for _ in range(sum(otkatnye_dict.values())): g_d.append({"type": "gate", "width": 4.0})
+        for _ in range(sum(raspashnye_dict.values())): g_d.append({"type": "gate", "width": 4.0})
         
         res = calc_side(fence_length_total, fence_height, g_d)
         _accumulate(res)
 
     # --- Цены установки/монтажа ---
-    import math
-    if fence_length_total < 31:
-        price_stolb_install = 500
-        base_m = 1300; base_3l = 1800; base_2s = 2000
-    elif fence_length_total < 51:
-        price_stolb_install = 450
-        base_m = 1200; base_3l = 1700; base_2s = 1900
-    elif fence_length_total < 71:
-        price_stolb_install = 400
-        base_m = 1100; base_3l = 1600; base_2s = 1800
-    elif fence_length_total < 101:
-        price_stolb_install = 400
-        base_m = 1000; base_3l = 1500; base_2s = 1700
-    elif fence_length_total < 201:
-        price_stolb_install = 400
-        base_m = 900; base_3l = 1400; base_2s = 1600
-    elif fence_length_total < 351:
-        price_stolb_install = 400
-        base_m = 600; base_3l = 850; base_2s = 1050
-    elif fence_length_total < 501:
-        price_stolb_install = 400
-        base_m = 550; base_3l = 750; base_2s = 850
-    else:
-        price_stolb_install = 400
-        base_m = 500; base_3l = 700; base_2s = 800
+    base_m = 1000; base_3l = 1500; base_2s = 1700; base_premium = 2000
+    
+    works_data = parsed_data.get("works", {})
+    if works_data:
+        # Standard rates
+        for bracket in works_data.get("standard", []):
+            range_str = bracket["range"]
+            if "-" in range_str:
+                parts = range_str.split("-")
+                min_l = int(parts[0])
+                max_l = int(parts[1])
+                if min_l <= fence_length_total <= max_l:
+                    base_m = bracket["prof_2lag"]
+                    base_3l = bracket["prof_3lag"]
+                    base_2s = bracket["shtaket_2side"]
+                    break
+            elif "более" in range_str:
+                parts = range_str.split()
+                min_l = int(parts[0])
+                if fence_length_total >= min_l:
+                    base_m = bracket["prof_2lag"]
+                    base_3l = bracket["prof_3lag"]
+                    base_2s = bracket["shtaket_2side"]
+                    break
 
-    if material_type == "Жалюзи":
-        price_montazh = math.ceil((base_3l * 1.3) / 10) * 10  # жалюзи сложнее
+        # Premium rates (Жалюзи, Ранчо)
+        for bracket in works_data.get("premium", []):
+            range_str = bracket["range"]
+            if "-" in range_str:
+                parts = range_str.split("-")
+                min_l = int(parts[0])
+                max_l = int(parts[1])
+                if min_l <= fence_length_total <= max_l:
+                    base_premium = bracket["price"]
+                    break
+            elif "более" in range_str:
+                parts = range_str.split()
+                min_l = int(parts[0])
+                if fence_length_total >= min_l:
+                    base_premium = bracket["price"]
+                    break
+
+    # Базовая логика цены столбов для старых расчетов (если потребуется)
+    price_stolb_install = 400
+    if fence_length_total < 31: price_stolb_install = 500
+    elif fence_length_total < 51: price_stolb_install = 450
+
+    if material_type in ["Жалюзи", "Ранчо", "Локо", "Юнис"]:
+        price_montazh = base_premium
     elif material_type == "Шахматка" or (material_type == "Штакет" and params.get("double_sided", False)):
-        price_montazh = math.ceil((base_2s * 1.2) / 10) * 10
+        price_montazh = base_2s
     elif lag_rows == 3:
-        price_montazh = math.ceil((base_3l * 1.2) / 10) * 10
+        price_montazh = base_3l
     else:
-        price_montazh = math.ceil((base_m * 1.2) / 10) * 10
+        price_montazh = base_m
 
     price_pokraska = 50 if fence_length_total < 30 else (30 if fence_length_total < 50 else 25)
 
@@ -704,6 +834,17 @@ def calculate_fence(params, prices, proflist, shtaket):
              "price": prices.get("Проволка для связки 3мм (кг)", 350)},
         ]
 
+    def get_additional_price(name_substring, default_price):
+        for item in works_data.get("additional", []):
+            if name_substring.lower() in item["name"].lower():
+                return item["price"]
+        return default_price
+
+    price_montazh_otk = get_additional_price("монтаж откатных ворот без привода", 36000)
+    price_montazh_privod = get_additional_price("монтаж привода под откатные ворота", 5400)
+    price_montazh_rasp = get_additional_price("монтаж распашных ворот", 11900)
+    price_montazh_kal = get_additional_price("монтаж калитки", 9000)
+
     # ======== ФОРМИРОВАНИЕ ИТОГОВОЙ ТАБЛИЦЫ ========
     works = []
     materials = []
@@ -724,32 +865,35 @@ def calculate_fence(params, prices, proflist, shtaket):
         "total": round(total_montazh_length * price_montazh)
     })
 
-    if n_otkatnye > 0:
-        works.append({
-            "name": "Монтаж ворот откатных",
-            "unit": "шт", "qty": n_otkatnye, "price": prices.get("Монтаж ворот откатных", 36000),
-            "total": n_otkatnye * prices.get("Монтаж ворот откатных", 36000)
-        })
-        if params.get("has_avtomatika", True):
+    for gate_type, count in otkatnye_dict.items():
+        if count > 0:
             works.append({
-                "name": "Монтаж привода под откатные ворота",
-                "unit": "шт", "qty": n_otkatnye, "price": prices.get("Монтаж привода под откатные ворота", 5400),
-                "total": n_otkatnye * prices.get("Монтаж привода под откатные ворота", 5400)
+                "name": "Монтаж откатных ворот без привода",
+                "unit": "шт", "qty": count, "price": price_montazh_otk,
+                "total": count * price_montazh_otk
+            })
+            if params.get("has_avtomatika", False):
+                works.append({
+                    "name": "Монтаж привода под откатные ворота с настройкой",
+                    "unit": "шт", "qty": count, "price": price_montazh_privod,
+                    "total": count * price_montazh_privod
+                })
+
+    for gate_type, count in raspashnye_dict.items():
+        if count > 0:
+            works.append({
+                "name": "Монтаж распашных ворот с засовами",
+                "unit": "шт", "qty": count, "price": price_montazh_rasp,
+                "total": count * price_montazh_rasp
             })
 
-    if n_raspashnye > 0:
-        works.append({
-            "name": "Монтаж ворот распашных",
-            "unit": "шт", "qty": n_raspashnye, "price": prices.get("Монтаж ворот распашных", 11880),
-            "total": n_raspashnye * prices.get("Монтаж ворот распашных", 11880)
-        })
-
-    if n_kalitka > 0:
-        works.append({
-            "name": "Монтаж калитки",
-            "unit": "шт", "qty": n_kalitka, "price": prices.get("Монтаж калитки", 6600),
-            "total": n_kalitka * prices.get("Монтаж калитки", 6600)
-        })
+    for gate_type, count in kalitki_dict.items():
+        if count > 0:
+            works.append({
+                "name": "Монтаж калитки с ручкой",
+                "unit": "шт", "qty": count, "price": price_montazh_kal,
+                "total": count * price_montazh_kal
+            })
 
     works.append({
         "name": "Покраска металлоконструкции",
@@ -917,46 +1061,50 @@ def calculate_fence(params, prices, proflist, shtaket):
             "total": round(parapet_length * parapet_price)
         })
 
-    if n_otkatnye > 0:
-        otk_price = prices.get("Ворота откатные со швеллером балкой и роликами", 24000)
-        materials.append({
-            "name": "Ворота откатные (каркас, швеллер, балка, ролики)",
-            "unit": "комплект", "qty": n_otkatnye,
-            "price": otk_price,
-            "total": n_otkatnye * otk_price
-        })
-        privod_price = prices.get("Привод для откатных ворот", 33500)
-        materials.append({
-            "name": "Привод для откатных ворот",
-            "unit": "шт", "qty": n_otkatnye,
-            "price": privod_price,
-            "total": n_otkatnye * privod_price
-        })
+    for gate_type, count in otkatnye_dict.items():
+        if count > 0:
+            price = get_additional_price(gate_type, 65000)
+            materials.append({
+                "name": gate_type,
+                "unit": "комплект", "qty": count,
+                "price": price,
+                "total": count * price
+            })
+            if params.get("has_avtomatika", False):
+                privod_price = prices.get("Привод для откатных ворот", 33500)
+                materials.append({
+                    "name": "Привод для откатных ворот",
+                    "unit": "шт", "qty": count,
+                    "price": privod_price,
+                    "total": count * privod_price
+                })
 
-    if n_raspashnye > 0:
-        rasp_price = prices.get("Ворота распашные стандарт", 9000)
-        materials.append({
-            "name": "Ворота распашные (каркас с шарнирами и фиксаторами)",
-            "unit": "комплект", "qty": n_raspashnye,
-            "price": rasp_price,
-            "total": n_raspashnye * rasp_price
-        })
+    for gate_type, count in raspashnye_dict.items():
+        if count > 0:
+            price = get_additional_price(gate_type, 22000)
+            materials.append({
+                "name": gate_type,
+                "unit": "комплект", "qty": count,
+                "price": price,
+                "total": count * price
+            })
 
-    if n_kalitka > 0:
-        kal_price = prices.get("Калитка стандарт", 5400)
-        materials.append({
-            "name": "Калитка стандарт (каркас)",
-            "unit": "комплект", "qty": n_kalitka,
-            "price": kal_price,
-            "total": n_kalitka * kal_price
-        })
-        zamok_price = prices.get("Замок в калитку", 2250)
-        materials.append({
-            "name": "Замок в калитку",
-            "unit": "шт", "qty": n_kalitka,
-            "price": zamok_price,
-            "total": n_kalitka * zamok_price
-        })
+    for gate_type, count in kalitki_dict.items():
+        if count > 0:
+            price = get_additional_price(gate_type, 12000)
+            materials.append({
+                "name": gate_type,
+                "unit": "комплект", "qty": count,
+                "price": price,
+                "total": count * price
+            })
+            zamok_price = prices.get("Замок в калитку", 2250)
+            materials.append({
+                "name": "Замок в калитку",
+                "unit": "шт", "qty": count,
+                "price": zamok_price,
+                "total": count * zamok_price
+            })
 
     materials.append({
         "name": "Диски отрезные 125х1,2",
@@ -1486,11 +1634,23 @@ with st.expander("⚙️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, что
                     s_len = st.number_input(f"Длина стороны {i} (м.п.):", 1.0, 500.0, 30.0, key=f"s_len_{i}")
                     
                     col_k, col_o, col_r = st.columns(3)
+                    
+                    kalitki_opts = [item["name"] for item in parsed_data.get("works", {}).get("additional", []) if "Калитка" in item["name"]]
+                    otkatnye_opts = [item["name"] for item in parsed_data.get("works", {}).get("additional", []) if "Ворота откатные" in item["name"]]
+                    raspashnye_opts = [item["name"] for item in parsed_data.get("works", {}).get("additional", []) if "Ворота распашные" in item["name"]]
+                    
+                    if not kalitki_opts: kalitki_opts = ["Калитка стандарт"]
+                    if not otkatnye_opts: otkatnye_opts = ["Ворота откатные стандарт"]
+                    if not raspashnye_opts: raspashnye_opts = ["Ворота распашные стандарт"]
+                    
+                    s_kal_type, s_otk_type, s_rasp_type = kalitki_opts[0], otkatnye_opts[0], raspashnye_opts[0]
+                    
                     with col_k:
                         s_kal = st.number_input(f"Калитки (шт):", 0, 5, 0, key=f"s_kal_{i}")
                         s_kal_pos = ""
                         if s_kal > 0:
                             s_kal_pos = st.text_input("Отступ (м):", "2", key=f"s_kal_pos_{i}")
+                            s_kal_type = st.selectbox("Тип калитки:", kalitki_opts, key=f"s_kal_type_{i}", label_visibility="collapsed")
                     with col_o:
                         s_otk = st.number_input(f"Отк. ворота:", 0, 5, 0, key=f"s_otk_{i}")
                         s_otk_pos = ""
@@ -1498,51 +1658,96 @@ with st.expander("⚙️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, что
                         if s_otk > 0:
                             s_otk_pos = st.text_input("Отступ (м):", "5", key=f"s_otk_pos_{i}")
                             s_avto = st.checkbox("Автоматика", value=True, key=f"s_avto_{i}")
+                            s_otk_type = st.selectbox("Тип откатных ворот:", otkatnye_opts, key=f"s_otk_type_{i}", label_visibility="collapsed")
                     with col_r:
                         s_rasp = st.number_input(f"Расп. ворота:", 0, 5, 0, key=f"s_rasp_{i}")
                         s_rasp_pos = ""
                         if s_rasp > 0:
                             s_rasp_pos = st.text_input("Отступ (м):", "5", key=f"s_rasp_pos_{i}")
+                            s_rasp_type = st.selectbox("Тип распашных ворот:", raspashnye_opts, key=f"s_rasp_type_{i}", label_visibility="collapsed")
                     
                     st.markdown("**Материал для стороны:**")
                     s_mat_type = st.radio(f"Тип:", ["Профнастил", "Штакет", "Шахматка", "Жалюзи", "Юнис", "Локо", "Ранчо"], horizontal=True, key=f"s_mat_type_{i}", label_visibility="collapsed")
                     s_jalousie_step = 84
-                    if s_mat_type == "Профнастил":
+                    if material_type == "Профнастил":
                         s_mat_name = st.selectbox(f"Профлист:", list(proflist.keys()), key=f"s_mat_name_{i}")
                         s_gap = 0.0
                     elif s_mat_type == "Жалюзи":
-                        s_jalousie_profile = st.radio("Профиль:", ["ROYAL Z", "ELITE S-образная", "LUXE V-образная"], horizontal=True, key=f"s_jal_prof_{i}")
-                        s_mat_name = f"Жалюзи {s_jalousie_profile} полиэстер"
+                        if parsed_data and "steel_kit" in parsed_data:
+                            jal_cats = list(dict.fromkeys(item["category"] for item in parsed_data["steel_kit"]))
+                            s_jalousie_profile = st.selectbox("Категория жалюзи:", jal_cats, key=f"s_jal_prof_{i}")
+                            jal_items = [item["name"] for item in parsed_data["steel_kit"] if item["category"] == s_jalousie_profile]
+                            s_mat_name = st.selectbox("Модель и покрытие:", jal_items, key=f"s_mat_name_{i}")
+                            if "ROYAL" in s_jalousie_profile: s_jalousie_step = 84
+                            elif "ELITE" in s_jalousie_profile: s_jalousie_step = 89
+                            elif "LUXE" in s_jalousie_profile: s_jalousie_step = 89
+                            else: s_jalousie_step = 84
+                        else:
+                            s_jalousie_profile = st.radio("Профиль:", ["ROYAL Z", "ELITE S-образная", "LUXE V-образная"], horizontal=True, key=f"s_jal_prof_{i}")
+                            s_mat_name = f"Жалюзи {s_jalousie_profile} полиэстер"
+                            s_jalousie_step = 84
                         s_gap = 0.0
                     elif s_mat_type == "Юнис":
-                        s_yunis_prof = st.selectbox("Профиль Юнис:", ["Твинго", "Твинго Макс", "Твист", "Лина", "Виола", "Гамма", "Хард"], key=f"s_yunis_prof_{i}")
-                        s_mat_name = f"Юнис {s_yunis_prof}"
+                        if parsed_data and "yunis" in parsed_data:
+                            yunis_cats = list(dict.fromkeys(item["category"] for item in parsed_data["yunis"]))
+                            s_yunis_prof = st.selectbox("Профиль Юнис:", yunis_cats, key=f"s_yunis_prof_{i}")
+                            yunis_items = [item["name"] for item in parsed_data["yunis"] if item["category"] == s_yunis_prof]
+                            s_mat_name = st.selectbox("Модель и покрытие:", yunis_items, key=f"s_mat_name_{i}")
+                            yunis_steps = {"Твинго": 55, "Твинго Макс": 75, "Твист": 60, "Лина": 80, "Виола": 80.1, "Гамма": 90, "Хард": 125}
+                            s_jalousie_step = yunis_steps.get(s_yunis_prof.split()[0] if s_yunis_prof else "", 55)
+                        else:
+                            s_yunis_prof = st.selectbox("Профиль Юнис:", ["Твинго", "Твинго Макс", "Твист", "Лина", "Виола", "Гамма", "Хард"], key=f"s_yunis_prof_{i}")
+                            s_mat_name = f"Юнис {s_yunis_prof}"
+                            s_jalousie_step = 55
                         s_gap = 0.0
-                        yunis_steps = {"Твинго": 55, "Твинго Макс": 75, "Твист": 60, "Лина": 80, "Виола": 80.1, "Гамма": 90, "Хард": 125}
-                        s_jalousie_step = yunis_steps.get(s_yunis_prof, 55)
                     elif s_mat_type == "Локо":
-                        s_loko_prof = st.selectbox("Профиль Локо:", ["Loko-60 Люкс", "Loko-60 Лайт", "Loko-80 Люкс", "Loko-80 Лайт", "Loko-100 Люкс", "Loko-100 Лайт"], key=f"s_loko_prof_{i}")
-                        s_mat_name = f"Локо {s_loko_prof}"
+                        if parsed_data and "loko" in parsed_data:
+                            loko_cats = list(dict.fromkeys(item["category"] for item in parsed_data["loko"]))
+                            s_loko_prof = st.selectbox("Профиль Локо:", loko_cats, key=f"s_loko_prof_{i}")
+                            loko_items = [item["name"] for item in parsed_data["loko"] if item["category"] == s_loko_prof]
+                            s_mat_name = st.selectbox("Модель и покрытие:", loko_items, key=f"s_mat_name_{i}")
+                            loko_steps = {"Loko-60": 80, "Loko-80": 100, "Loko-100": 120}
+                            s_jalousie_step = loko_steps.get(s_loko_prof.replace(" Люкс","").replace(" Лайт",""), 80)
+                        else:
+                            s_loko_prof = st.selectbox("Профиль Локо:", ["Loko-60 Люкс", "Loko-60 Лайт", "Loko-80 Люкс", "Loko-80 Лайт", "Loko-100 Люкс", "Loko-100 Лайт"], key=f"s_loko_prof_{i}")
+                            s_mat_name = f"Локо {s_loko_prof}"
+                            s_jalousie_step = 80
                         s_gap = 0.0
-                        loko_steps = {"Loko-60 Люкс": 80, "Loko-60 Лайт": 95, "Loko-80 Люкс": 100, "Loko-80 Лайт": 115, "Loko-100 Люкс": 120, "Loko-100 Лайт": 135}
-                        s_jalousie_step = loko_steps.get(s_loko_prof, 80)
                     elif s_mat_type == "Ранчо":
-                        s_rancho_w = st.selectbox("Ширина доски (мм):", [60, 80, 100, 120, 150, 190, 200, 250], key=f"s_rancho_w_{i}")
-                        s_mat_name = f"Ранчо {s_rancho_w}мм"
+                        if parsed_data and "rancho" in parsed_data:
+                            rancho_cats = list(dict.fromkeys(item["category"] for item in parsed_data["rancho"]))
+                            s_rancho_prof = st.selectbox("Категория Ранчо:", rancho_cats, key=f"s_rancho_w_{i}")
+                            rancho_items = [item["name"] for item in parsed_data["rancho"] if item["category"] == s_rancho_prof]
+                            s_mat_name = st.selectbox("Модель и покрытие:", rancho_items, key=f"s_mat_name_{i}")
+                            import re
+                            match = re.search(r'(\d+)\s*мм', s_rancho_prof)
+                            s_rancho_w = int(match.group(1)) if match else 100
+                        else:
+                            s_rancho_w = st.selectbox("Ширина доски (мм):", [60, 80, 100, 120, 150, 190, 200, 250], key=f"s_rancho_w_{i}")
+                            s_mat_name = f"Ранчо {s_rancho_w}мм"
                         s_gap = st.number_input("Зазор (м):", 0.01, 0.20, 0.04, step=0.01, key=f"s_gap_{i}")
                     else:
-                        s_mat_name = st.selectbox(f"Штакет:", list(shtaket.keys()), key=f"s_mat_name_{i}")
+                        if parsed_data and "picket" in parsed_data:
+                            shtaket_cats = list(dict.fromkeys(item["category"] for item in parsed_data["picket"]))
+                            s_shtaket_prof = st.selectbox("Форма штакета:", shtaket_cats, key=f"s_shtaket_prof_{i}")
+                            shtaket_items = [item["name"] for item in parsed_data["picket"] if item["category"] == s_shtaket_prof]
+                            s_mat_name = st.selectbox("Модель и покрытие:", shtaket_items, key=f"s_mat_name_{i}")
+                        else:
+                            s_mat_name = st.selectbox(f"Штакет:", list(shtaket.keys()), key=f"s_mat_name_{i}")
                         s_gap = st.number_input("Зазор (м):", 0.01, 0.10, 0.04, step=0.01, key=f"s_gap_{i}")
                     
                     sides_data.append({
                         "length": s_len,
                         "kalitka_count": s_kal,
                         "kalitka_pos": s_kal_pos,
+                        "kalitka_type": s_kal_type,
                         "otkatnye_count": s_otk,
                         "otkatnye_pos": s_otk_pos,
+                        "otkatnye_type": s_otk_type,
                         "has_avtomatika": s_avto,
                         "raspashnye_count": s_rasp,
                         "raspashnye_pos": s_rasp_pos,
+                        "raspashnye_type": s_rasp_type,
                         "material_type": s_mat_type,
                         "material_name": s_mat_name,
                         "gap": s_gap,
@@ -1566,34 +1771,69 @@ with st.expander("⚙️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, что
                 material_name = st.selectbox("Выберите профлист:", list(proflist.keys()))
                 gap_m = 0.0
             elif material_type == "Жалюзи":
-                jalousie_profile = st.radio("Профиль ламели:", [
-                    "ROYAL Z", "ELITE S-образная", "LUXE V-образная"
-                ], horizontal=True)
-                if jalousie_profile == "ROYAL Z":
-                    jalousie_step = st.radio("Шаг ламелей:", [84, 106], horizontal=True, format_func=lambda x: f"{x} мм")
+                if parsed_data and "steel_kit" in parsed_data:
+                    jal_cats = list(dict.fromkeys(item["category"] for item in parsed_data["steel_kit"]))
+                    jalousie_profile = st.selectbox("Категория жалюзи:", jal_cats)
+                    jal_items = [item["name"] for item in parsed_data["steel_kit"] if item["category"] == jalousie_profile]
+                    material_name = st.selectbox("Модель и покрытие:", jal_items)
+                    # Определяем шаг по категории (приблизительно)
+                    if "ROYAL" in jalousie_profile: jalousie_step = 84 # или 106
+                    elif "ELITE" in jalousie_profile: jalousie_step = 89
+                    elif "LUXE" in jalousie_profile: jalousie_step = 89
+                    else: jalousie_step = 84
                 else:
+                    jalousie_profile = st.radio("Профиль ламели:", ["ROYAL Z", "ELITE S-образная", "LUXE V-образная"], horizontal=True)
+                    material_name = f"Жалюзи {jalousie_profile} полиэстер"
                     jalousie_step = 84
-                    st.caption("Шаг ламелей: 84 мм")
-                material_name = f"Жалюзи {jalousie_profile} полиэстер"
                 gap_m = 0.0
             elif material_type == "Юнис":
-                yunis_prof = st.selectbox("Профиль Юнис:", ["Твинго", "Твинго Макс", "Твист", "Лина", "Виола", "Гамма", "Хард"])
-                material_name = f"Юнис {yunis_prof}"
+                if parsed_data and "yunis" in parsed_data:
+                    yunis_cats = list(dict.fromkeys(item["category"] for item in parsed_data["yunis"]))
+                    yunis_prof = st.selectbox("Профиль Юнис:", yunis_cats)
+                    yunis_items = [item["name"] for item in parsed_data["yunis"] if item["category"] == yunis_prof]
+                    material_name = st.selectbox("Модель и покрытие:", yunis_items)
+                    yunis_steps = {"Твинго": 55, "Твинго Макс": 75, "Твист": 60, "Лина": 80, "Виола": 80.1, "Гамма": 90, "Хард": 125}
+                    jalousie_step = yunis_steps.get(yunis_prof.split()[0] if yunis_prof else "", 55)
+                else:
+                    yunis_prof = st.selectbox("Профиль Юнис:", ["Твинго", "Твинго Макс", "Твист", "Лина", "Виола", "Гамма", "Хард"])
+                    material_name = f"Юнис {yunis_prof}"
+                    jalousie_step = 55
                 gap_m = 0.0
-                yunis_steps = {"Твинго": 55, "Твинго Макс": 75, "Твист": 60, "Лина": 80, "Виола": 80.1, "Гамма": 90, "Хард": 125}
-                jalousie_step = yunis_steps.get(yunis_prof, 55)
             elif material_type == "Локо":
-                loko_prof = st.selectbox("Профиль Локо:", ["Loko-60 Люкс", "Loko-60 Лайт", "Loko-80 Люкс", "Loko-80 Лайт", "Loko-100 Люкс", "Loko-100 Лайт"])
-                material_name = f"Локо {loko_prof}"
+                if parsed_data and "loko" in parsed_data:
+                    loko_cats = list(dict.fromkeys(item["category"] for item in parsed_data["loko"]))
+                    loko_prof = st.selectbox("Профиль Локо:", loko_cats)
+                    loko_items = [item["name"] for item in parsed_data["loko"] if item["category"] == loko_prof]
+                    material_name = st.selectbox("Модель и покрытие:", loko_items)
+                    loko_steps = {"Loko-60": 80, "Loko-80": 100, "Loko-100": 120}
+                    jalousie_step = loko_steps.get(loko_prof.replace(" Люкс","").replace(" Лайт",""), 80)
+                else:
+                    loko_prof = st.selectbox("Профиль Локо:", ["Loko-60 Люкс", "Loko-60 Лайт", "Loko-80 Люкс", "Loko-80 Лайт", "Loko-100 Люкс", "Loko-100 Лайт"])
+                    material_name = f"Локо {loko_prof}"
+                    jalousie_step = 80
                 gap_m = 0.0
-                loko_steps = {"Loko-60 Люкс": 80, "Loko-60 Лайт": 95, "Loko-80 Люкс": 100, "Loko-80 Лайт": 115, "Loko-100 Люкс": 120, "Loko-100 Лайт": 135}
-                jalousie_step = loko_steps.get(loko_prof, 80)
             elif material_type == "Ранчо":
-                rancho_w = st.selectbox("Ширина доски (мм):", [60, 80, 100, 120, 150, 190, 200, 250])
-                material_name = f"Ранчо {rancho_w}мм"
+                if parsed_data and "rancho" in parsed_data:
+                    rancho_cats = list(dict.fromkeys(item["category"] for item in parsed_data["rancho"]))
+                    rancho_prof = st.selectbox("Категория Ранчо:", rancho_cats)
+                    rancho_items = [item["name"] for item in parsed_data["rancho"] if item["category"] == rancho_prof]
+                    material_name = st.selectbox("Модель и покрытие:", rancho_items)
+                    rancho_w = 100 # default fallback
+                    import re
+                    match = re.search(r'(\d+)\s*мм', rancho_prof)
+                    if match: rancho_w = int(match.group(1))
+                else:
+                    rancho_w = st.selectbox("Ширина доски (мм):", [60, 80, 100, 120, 150, 190, 200, 250])
+                    material_name = f"Ранчо {rancho_w}мм"
                 gap_m = st.number_input("Зазор (м):", 0.01, 0.20, 0.04, step=0.01)
             else:
-                material_name = st.selectbox("Выберите штакет:", list(shtaket.keys()))
+                if parsed_data and "picket" in parsed_data:
+                    shtaket_cats = list(dict.fromkeys(item["category"] for item in parsed_data["picket"]))
+                    shtaket_prof = st.selectbox("Форма штакета:", shtaket_cats)
+                    shtaket_items = [item["name"] for item in parsed_data["picket"] if item["category"] == shtaket_prof]
+                    material_name = st.selectbox("Модель и покрытие:", shtaket_items)
+                else:
+                    material_name = st.selectbox("Выберите штакет:", list(shtaket.keys()))
                 gap_m = st.number_input("Зазор между штакетинами (м):", 0.01, 0.10, 0.04, step=0.01)
         else:
             # Для детального режима материалы уже выбраны для каждой стороны,
@@ -1611,19 +1851,39 @@ with st.expander("⚙️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, что
         st.markdown("#### 🛡️ 2. Ворота, Калитки, Столбы")
 
         if calc_mode == "express":
+            kalitki_opts = [item["name"] for item in parsed_data.get("works", {}).get("additional", []) if "Калитка" in item["name"]]
+            otkatnye_opts = [item["name"] for item in parsed_data.get("works", {}).get("additional", []) if "Ворота откатные" in item["name"]]
+            raspashnye_opts = [item["name"] for item in parsed_data.get("works", {}).get("additional", []) if "Ворота распашные" in item["name"]]
+            
+            if not kalitki_opts: kalitki_opts = ["Калитка стандарт"]
+            if not otkatnye_opts: otkatnye_opts = ["Ворота откатные стандарт"]
+            if not raspashnye_opts: raspashnye_opts = ["Ворота распашные стандарт"]
+            
             has_kalitka = st.checkbox("Калитка", value=True)
-            kalitka_count = st.number_input("Кол-во калиток:", 1, 5, 1, key="kalitka_n") if has_kalitka else 0
+            if has_kalitka:
+                kalitka_count = st.number_input("Кол-во калиток:", 1, 5, 1, key="kalitka_n")
+                kalitka_type = st.selectbox("Тип калитки:", kalitki_opts, key="kalitka_type")
+            else:
+                kalitka_count = 0
+                kalitka_type = kalitki_opts[0]
 
             has_otkatnye = st.checkbox("Ворота откатные", value=True)
             if has_otkatnye:
                 otkatnye_count = st.number_input("Кол-во откатных ворот:", 1, 5, 1, key="otkat_n")
+                otkatnye_type = st.selectbox("Тип откатных ворот:", otkatnye_opts, key="otkatnye_type")
                 has_avtomatika = st.checkbox("Установить автоматику (привод)", value=True, key="avto_exp")
             else:
                 otkatnye_count = 0
                 has_avtomatika = False
+                otkatnye_type = otkatnye_opts[0]
 
             has_raspashnye = st.checkbox("Ворота распашные", value=False)
-            raspashnye_count = st.number_input("Кол-во распашных ворот:", 1, 5, 1, key="rasp_n") if has_raspashnye else 0
+            if has_raspashnye:
+                raspashnye_count = st.number_input("Кол-во распашных ворот:", 1, 5, 1, key="rasp_n")
+                raspashnye_type = st.selectbox("Тип распашных ворот:", raspashnye_opts, key="raspashnye_type")
+            else:
+                raspashnye_count = 0
+                raspashnye_type = raspashnye_opts[0]
         else:
             has_avtomatika = any(s.get("has_avtomatika", False) for s in sides_data)
             st.info("Ворота и калитки настраиваются для каждой стороны в блоке слева.")
@@ -1727,11 +1987,14 @@ params = {
     "color_ral": color_ral,
     "has_kalitka": has_kalitka,
     "kalitka_count": kalitka_count if has_kalitka else 0,
+    "kalitka_type": kalitka_type if calc_mode == "express" else "",
     "has_otkatnye": has_otkatnye,
     "otkatnye_count": otkatnye_count if has_otkatnye else 0,
+    "otkatnye_type": otkatnye_type if calc_mode == "express" else "",
     "has_avtomatika": has_avtomatika,
     "has_raspashnye": has_raspashnye,
     "raspashnye_count": raspashnye_count if has_raspashnye else 0,
+    "raspashnye_type": raspashnye_type if calc_mode == "express" else "",
     "stolb_type": stolb_type,
     "post_type": post_type_val,
     "lag_rows": lag_rows,
@@ -1761,7 +2024,7 @@ params = {
     "jalousie_profile": jalousie_profile if material_type == "Жалюзи" else "ROYAL Z"
 }
 
-result = calculate_fence(params, prices, proflist, shtaket)
+result = calculate_fence(params, prices, proflist, shtaket, parsed_data)
 
 # ============================================================
 # ВЫВОД РЕЗУЛЬТАТОВ
@@ -1806,38 +2069,80 @@ if result.get("plot_bytes"):
     st.image(result["plot_bytes"], use_container_width=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-# Таблицы
+# Таблицы с группировкой
 tab_works, tab_materials, tab_all = st.tabs(["🛠️ Работы", "🧱 Материалы", "📊 Полная калькуляция"])
 
+def categorize_work(w_name):
+    w_lower = w_name.lower()
+    if "ворот" in w_lower or "калитк" in w_lower or "привод" in w_lower:
+        return "🚪 Ворота и калитки"
+    elif "фундамент" in w_lower or "покраск" in w_lower or "бурение" in w_lower:
+        return "➕ Дополнительные работы"
+    else:
+        return "🏗️ Основной монтаж"
+
+def categorize_material(m_name):
+    m_lower = m_name.lower()
+    if "ворот" in m_lower or "калитк" in m_lower or "привод" in m_lower or "замок" in m_lower:
+        return "🚪 Ворота и калитки"
+    elif any(x in m_lower for x in ["цемент", "щебень", "отсев", "арматура", "катанка", "провол", "бетон"]):
+        return "🏗️ Строительные материалы"
+    elif any(x in m_lower for x in ["диск", "валик", "цинк", "ветошь", "обезжириватель", "саморез", "краска", "доставка"]):
+        return "➕ Прочее и расходники"
+    else:
+        return "🧱 Основные материалы"
+
+def render_grouped_table(items, categorize_func, total_sum, theme_text, theme_border, highlight_color):
+    groups = {}
+    for item in items:
+        cat = categorize_func(item["name"])
+        if cat not in groups: groups[cat] = []
+        groups[cat].append(item)
+    
+    html = f"<div style='border: 1px solid {theme_border}; border-radius: 8px; overflow: hidden;'>"
+    
+    for cat, cat_items in groups.items():
+        html += f"""
+        <div style='background-color: {highlight_color}20; padding: 10px 15px; font-weight: bold; border-bottom: 1px solid {theme_border};'>
+            {cat}
+        </div>
+        <table style='width: 100%; border-collapse: collapse; text-align: left; margin: 0; font-size: 0.95rem;'>
+            <tr style='border-bottom: 1px solid {theme_border}; opacity: 0.7; font-size: 0.85rem;'>
+                <th style='padding: 8px 15px;'>Наименование</th>
+                <th style='padding: 8px 15px;'>Ед.</th>
+                <th style='padding: 8px 15px;'>Кол-во</th>
+                <th style='padding: 8px 15px;'>Цена</th>
+                <th style='padding: 8px 15px; text-align: right;'>Сумма</th>
+            </tr>
+        """
+        for it in cat_items:
+            html += f"""
+            <tr style='border-bottom: 1px solid {theme_border};'>
+                <td style='padding: 10px 15px;'>{it['name']}</td>
+                <td style='padding: 10px 15px;'>{it.get('unit','')}</td>
+                <td style='padding: 10px 15px;'>{it.get('qty','')}</td>
+                <td style='padding: 10px 15px;'>{it.get('price',0):,.0f} ₽</td>
+                <td style='padding: 10px 15px; text-align: right; font-weight: bold;'>{it['total']:,.0f} ₽</td>
+            </tr>
+            """
+        html += "</table>"
+    
+    html += f"""
+    <div style='padding: 15px; text-align: right; font-size: 1.2rem; font-weight: bold; background-color: {highlight_color}10;'>
+        ИТОГО: <span style='color: {highlight_color};'>{total_sum:,.0f} ₽</span>
+    </div>
+    </div>
+    """
+    return html
+
 with tab_works:
-    works_table = []
-    for idx, w in enumerate(result["works"], 1):
-        works_table.append({
-            "№": idx,
-            "Наименование": w["name"],
-            "Ед.": w.get("unit", ""),
-            "Кол-во": w.get("qty", ""),
-            "Цена": f'{w.get("price", 0):,.0f}',
-            "Сумма": f'{w["total"]:,.0f}',
-        })
-    st.dataframe(works_table, use_container_width=True, hide_index=True)
-    st.markdown(f"**Итого работы: {result['total_works']:,.0f} руб.**")
+    st.markdown(render_grouped_table(result["works"], categorize_work, result["total_works"], text_color, border_color, "#00a8ff"), unsafe_allow_html=True)
 
 with tab_materials:
-    mat_table = []
-    for idx, m in enumerate(result["materials"], 1):
-        mat_table.append({
-            "№": idx,
-            "Наименование": m["name"],
-            "Ед.": m.get("unit", ""),
-            "Кол-во": m.get("qty", ""),
-            "Цена": f'{m.get("price", 0):,.0f}',
-            "Сумма": f'{m["total"]:,.0f}',
-        })
-    st.dataframe(mat_table, use_container_width=True, hide_index=True)
-    st.markdown(f"**Итого материалы: {result['total_materials']:,.0f} руб.**")
+    st.markdown(render_grouped_table(result["materials"], categorize_material, result["total_materials"], text_color, border_color, "#fbc531"), unsafe_allow_html=True)
 
 with tab_all:
+    # Простая сводная таблица для Полной калькуляции
     all_table = []
     idx = 1
     for w in result["works"]:
@@ -1858,7 +2163,7 @@ with tab_all:
     c_total_l, c_total_r = st.columns(2)
     c_total_l.markdown(f"**Работы: {result['total_works']:,.0f} руб.**")
     c_total_r.markdown(f"**Материалы: {result['total_materials']:,.0f} руб.**")
-    st.markdown(f"### 💰 ИТОГО: {result['grand_total']:,.0f} руб.")
+    st.markdown(f"### 💰 ИТОГО: <span style='color:#44bd32;'>{result['grand_total']:,.0f} руб.</span>", unsafe_allow_html=True)
 
 # ============================================================
 # PDF СКАЧИВАНИЕ
