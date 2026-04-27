@@ -724,6 +724,10 @@ def calculate_fence(params, prices, proflist, shtaket, parsed_data):
         gate_slats_total = 0
         gate_step_mm = jalousie_step if material_type != "Ранчо" else (rancho_w_m + gap_rancho) * 1000
 
+        n_otkatnye = sum(otkatnye_dict.values())
+        n_raspashnye = sum(raspashnye_dict.values())
+        n_kalitka = sum(kalitki_dict.values())
+
         if n_otkatnye > 0:
             gate_h = fence_height
             gate_w = 4.0
@@ -785,6 +789,9 @@ def calculate_fence(params, prices, proflist, shtaket, parsed_data):
     scheben_bags = math.ceil(total_concrete_vol * 24)
     otsev_bags = scheben_bags
 
+    n_kalitka = sum(kalitki_dict.values())
+    n_otkatnye = sum(otkatnye_dict.values())
+    n_raspashnye = sum(raspashnye_dict.values())
     pokraska_mp = (total_lagi * 3) + (total_stolby * 2) + (n_kalitka * 7) + (n_otkatnye * 70) + (n_raspashnye * 40)
     valik_qty = 3 if fence_length_total < 50 else 6
     zink_qty = 1 if fence_length_total <= 100 else 2
