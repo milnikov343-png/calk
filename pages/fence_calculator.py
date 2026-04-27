@@ -1411,7 +1411,7 @@ def create_fence_pdf(result, params):
 # ============================================================
 st.set_page_config(
     page_title="Дача 2000 | Калькулятор Заборов",
-    page_icon="🏗️",
+    page_icon=":material/construction:",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -1600,7 +1600,7 @@ with st.container():
         st.markdown(f"""
         <div>
             <h2 style='margin:0; padding-top:8px; font-weight:800; color: {header_text};'>
-                🏡 Калькулятор заборов
+                :material/home: Калькулятор заборов
             </h2>
             <span style='color: #00b894; font-size: 0.9rem;'>ООО "Дача 2000" — Профессиональный расчёт стоимости</span>
         </div>
@@ -1611,7 +1611,7 @@ st.markdown("---")
 # ============================================================
 # ВВОД ДАННЫХ
 # ============================================================
-with st.expander("⚙️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, чтобы развернуть/свернуть)", expanded=True):
+with st.expander(":material/settings: ПАРАМЕТРЫ ЗАБОРА (Нажмите, чтобы развернуть/свернуть)", expanded=True):
     calc_mode_label = st.radio("Режим расчёта:", ["Экспресс-расчёт (по общей длине)", "Детальный расчёт по сторонам"], horizontal=True)
     calc_mode = "express" if "Экспресс" in calc_mode_label else "detailed"
     
@@ -1629,7 +1629,7 @@ with st.expander("⚙️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, что
     sides_data = []
 
     with c1:
-        st.markdown("#### 📏 1. Габариты и Материал")
+        st.markdown("#### :material/straighten: 1. Габариты и Материал")
         
         if calc_mode == "express":
             fence_length = st.number_input("Общая длина забора (м.п.):", 1, 500, 128)
@@ -1855,7 +1855,7 @@ with st.expander("⚙️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, что
         fastener = st.selectbox("Способ крепления:", ["Саморез кровельный в цвет", "Саморез с пресс-шайбой"])
 
     with c2:
-        st.markdown("#### 🛡️ 2. Ворота, Калитки, Столбы")
+        st.markdown("#### :material/sensor_door: 2. Ворота, Калитки, Столбы")
 
         if calc_mode == "express":
             kalitki_opts = [item["name"] for item in parsed_data.get("works", {}).get("additional", []) if "Калитка" in item["name"]]
@@ -1937,7 +1937,7 @@ with st.expander("⚙️ ПАРАМЕТРЫ ЗАБОРА (Нажмите, что
         cap_type_val = cap_map[cap_choice]
 
     with c3:
-        st.markdown("#### 🚚 3. Доставка и Фундамент")
+        st.markdown("#### :material/local_shipping: 3. Доставка и Фундамент")
         distance_km = st.number_input("Расстояние до объекта (км):", 0, 500, 60)
 
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
@@ -2077,27 +2077,27 @@ if result.get("plot_bytes"):
     st.markdown("<br>", unsafe_allow_html=True)
 
 # Таблицы с группировкой
-tab_works, tab_materials, tab_all = st.tabs(["🛠️ Работы", "🧱 Материалы", "📊 Полная калькуляция"])
+tab_works, tab_materials, tab_all = st.tabs([":material/construction: Работы", ":material/inventory: Материалы", ":material/calculate: Полная калькуляция"])
 
 def categorize_work(w_name):
     w_lower = w_name.lower()
     if "ворот" in w_lower or "калитк" in w_lower or "привод" in w_lower:
-        return "🚪 Ворота и калитки"
+        return ":material/sensor_door: Ворота и калитки"
     elif "фундамент" in w_lower or "покраск" in w_lower or "бурение" in w_lower:
         return "➕ Дополнительные работы"
     else:
-        return "🏗️ Основной монтаж"
+        return ":material/construction: Основной монтаж"
 
 def categorize_material(m_name):
     m_lower = m_name.lower()
     if "ворот" in m_lower or "калитк" in m_lower or "привод" in m_lower or "замок" in m_lower:
-        return "🚪 Ворота и калитки"
+        return ":material/sensor_door: Ворота и калитки"
     elif any(x in m_lower for x in ["цемент", "щебень", "отсев", "арматура", "катанка", "провол", "бетон"]):
-        return "🏗️ Строительные материалы"
+        return ":material/construction: Строительные материалы"
     elif any(x in m_lower for x in ["диск", "валик", "цинк", "ветошь", "обезжириватель", "саморез", "краска", "доставка"]):
         return "➕ Прочее и расходники"
     else:
-        return "🧱 Основные материалы"
+        return ":material/inventory_2: Основные материалы"
 
 def render_grouped_table(items, categorize_func, total_sum, theme_text, theme_border, highlight_color):
     groups = {}
@@ -2180,7 +2180,7 @@ col_dl1, col_dl2, col_dl3 = st.columns([1, 2, 1])
 with col_dl2:
     pdf_data = create_fence_pdf(result, params)
     st.download_button(
-        "📥 СКАЧАТЬ КАЛЬКУЛЯЦИЮ (PDF)",
+        ":material/download: СКАЧАТЬ КАЛЬКУЛЯЦИЮ (PDF)",
         data=pdf_data,
         file_name=f"Забор_{address.replace(' ', '_')[:30]}_{datetime.date.today()}.pdf",
         mime="application/pdf",
@@ -2192,7 +2192,7 @@ with col_dl2:
 # CRM И ЭКСПОРТ (БИЗНЕС-БЛОК)
 # ============================================================
 st.markdown("---")
-st.markdown("### 💼 Интеграции и Сохранение")
+st.markdown("### :material/work: Интеграции и Сохранение")
 
 col_export, col_crm = st.columns(2)
 
@@ -2200,7 +2200,7 @@ with col_export:
     st.info("Экспорт данных проекта в формате JSON для интеграций или архива.")
     export_json = json.dumps(params, ensure_ascii=False, indent=2)
     st.download_button(
-        "💾 Сохранить проект (JSON)",
+        ":material/save: Сохранить проект (JSON)",
         data=export_json,
         file_name=f"project_fence_{datetime.date.today()}.json",
         mime="application/json",
@@ -2210,19 +2210,19 @@ with col_export:
 with col_crm:
     st.info("Отправка заявки в CRM-систему через Webhook (Битрикс24, amoCRM).")
     crm_webhook = st.text_input("Webhook URL CRM:", placeholder="https://your-crm.bitrix24.ru/rest/...", label_visibility="collapsed")
-    if st.button("🚀 Отправить лид в CRM", use_container_width=True):
+    if st.button(":material/rocket_launch: Отправить лид в CRM", use_container_width=True):
         if crm_webhook:
             try:
                 import requests
                 resp = requests.post(crm_webhook, json={"project_type": "fence", "data": params, "total": result["grand_total"]})
                 if resp.status_code in [200, 201]:
-                    st.success("✅ Заявка успешно отправлена в CRM!")
+                    st.success(":material/check_circle: Заявка успешно отправлена в CRM!")
                 else:
-                    st.error(f"❌ Ошибка отправки: статус {resp.status_code}")
+                    st.error(f":material/cancel: Ошибка отправки: статус {resp.status_code}")
             except Exception as e:
-                st.error(f"❌ Ошибка соединения: {e}")
+                st.error(f":material/cancel: Ошибка соединения: {e}")
         else:
-            st.warning("⚠️ Введите URL Webhook")
+            st.warning(":material/warning: Введите URL Webhook")
 
 # ============================================================
 # РЕДАКТОР ЦЕН
@@ -2231,7 +2231,7 @@ st.markdown("---")
 with st.expander("💰 РЕДАКТОР ЦЕН (Настройка прайс-листа)", expanded=False):
     st.info("🔒 Цены сохраняются автоматически в файл и не сбрасываются при перезагрузке.")
 
-    price_tab1, price_tab2, price_tab3 = st.tabs(["🔧 Основные цены", "📄 Профлист", "🔳 Штакет"])
+    price_tab1, price_tab2, price_tab3 = st.tabs(["🔧 Основные цены", "📄 Профлист", ":material/crop_din: Штакет"])
 
     with price_tab1:
         changed = False
@@ -2249,7 +2249,7 @@ with st.expander("💰 РЕДАКТОР ЦЕН (Настройка прайс-л
 
         if changed:
             save_prices(prices, proflist, shtaket)
-            st.toast("✅ Цены сохранены!")
+            st.toast(":material/check_circle: Цены сохранены!")
 
     with price_tab2:
         changed_p = False
@@ -2266,7 +2266,7 @@ with st.expander("💰 РЕДАКТОР ЦЕН (Настройка прайс-л
 
         if changed_p:
             save_prices(prices, proflist, shtaket)
-            st.toast("✅ Цены на профлист сохранены!")
+            st.toast(":material/check_circle: Цены на профлист сохранены!")
 
     with price_tab3:
         changed_s = False
@@ -2283,11 +2283,11 @@ with st.expander("💰 РЕДАКТОР ЦЕН (Настройка прайс-л
 
         if changed_s:
             save_prices(prices, proflist, shtaket)
-            st.toast("✅ Цены на штакет сохранены!")
+            st.toast(":material/check_circle: Цены на штакет сохранены!")
 
     # Кнопка сброса
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🔄 Сбросить все цены к заводским", type="secondary"):
+    if st.button(":material/refresh: Сбросить все цены к заводским", type="secondary"):
         if os.path.exists(PRICES_FILE):
             os.remove(PRICES_FILE)
         st.toast("Цены сброшены!")

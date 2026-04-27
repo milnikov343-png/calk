@@ -5,7 +5,7 @@ import os
 
 st.set_page_config(
     page_title="Прайс на работы по забору",
-    page_icon="📋",
+    page_icon=":material/list_alt:",
     layout="wide"
 )
 
@@ -91,7 +91,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="header-prices"><h1>📋 Прайс на работы по забору</h1></div>', unsafe_allow_html=True)
+st.markdown('<div class="header-prices"><h1><span class="material-symbols-outlined" style="vertical-align: bottom;">request_quote</span> Прайс на работы по забору</h1></div>', unsafe_allow_html=True)
 
 # --- Загрузка данных из кэша ---
 PARSED_PRICES_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "parsed_prices.json")
@@ -113,7 +113,7 @@ def add_margin(val):
 works_data = load_works_data()
 
 if not works_data:
-    st.error("⚠️ Данные о ценах не найдены. Сначала откройте калькулятор заборов, чтобы загрузить актуальные цены из Google Таблицы.")
+    st.error(":material/warning: Данные о ценах не найдены. Сначала откройте калькулятор заборов, чтобы загрузить актуальные цены из Google Таблицы.")
 else:
     standard = works_data.get("standard", [])
     premium = works_data.get("premium", [])
@@ -124,7 +124,7 @@ else:
     # ==========================================
     st.markdown("""
     <div class="price-section">
-        <div class="price-section-title blue">🏗️ Профнастил, 3D сетка, Рабица, Штакетник односторонний — монтаж с 2 лагами (₽/м.п.)</div>
+        <div class="price-section-title blue">:material/architecture: Профнастил, 3D сетка, Рабица, Штакетник односторонний — монтаж с 2 лагами (₽/м.п.)</div>
         <table class="price-table">
             <tr><th>Общий метраж забора</th><th class="price-col">Цена за м.п.</th></tr>
     """, unsafe_allow_html=True)
@@ -138,7 +138,7 @@ else:
     # ==========================================
     st.markdown("""
     <div class="price-section">
-        <div class="price-section-title green">🏗️ Профнастил, Штакетник односторонний, Сайдинг, Каменное дерево — монтаж с 3 лагами (₽/м.п.)</div>
+        <div class="price-section-title green">:material/architecture: Профнастил, Штакетник односторонний, Сайдинг, Каменное дерево — монтаж с 3 лагами (₽/м.п.)</div>
         <table class="price-table">
             <tr><th>Общий метраж забора</th><th class="price-col">Цена за м.п.</th></tr>
     """, unsafe_allow_html=True)
@@ -152,7 +152,7 @@ else:
     # ==========================================
     st.markdown("""
     <div class="price-section">
-        <div class="price-section-title orange">🚧 Штакетник двусторонний / Шахматка — монтаж (₽/м.п.)</div>
+        <div class="price-section-title orange">:material/vertical_split: Штакетник двусторонний / Шахматка — монтаж (₽/м.п.)</div>
         <table class="price-table">
             <tr><th>Общий метраж забора</th><th class="price-col">Цена за м.п.</th></tr>
     """, unsafe_allow_html=True)
@@ -166,7 +166,7 @@ else:
     # ==========================================
     st.markdown("""
     <div class="price-section">
-        <div class="price-section-title purple">✨ Жалюзи / Ранчо — монтаж (₽/м.п.)</div>
+        <div class="price-section-title purple">:material/view_stream: Жалюзи / Ранчо — монтаж (₽/м.п.)</div>
         <table class="price-table">
             <tr><th>Общий метраж забора</th><th class="price-col">Цена за м.п.</th></tr>
     """, unsafe_allow_html=True)
@@ -199,7 +199,7 @@ else:
     # ==========================================
     st.markdown("""
     <div class="price-section">
-        <div class="price-section-title green">🛠️ Дополнительные работы (Монтаж)</div>
+        <div class="price-section-title green">:material/construction: Дополнительные работы (Монтаж)</div>
         <table class="price-table">
             <tr><th>Наименование работы</th><th>Ед. изм.</th><th class="price-col">Цена</th></tr>
     """, unsafe_allow_html=True)
@@ -213,7 +213,7 @@ else:
     # ==========================================
     st.markdown("""
     <div class="price-section">
-        <div class="price-section-title blue">🚪 Ворота откатные — комплекты</div>
+        <div class="price-section-title blue">:material/door_sliding: Ворота откатные — комплекты</div>
         <table class="price-table">
             <tr><th>Модель</th><th>Ед.</th><th class="price-col">Цена</th></tr>
     """, unsafe_allow_html=True)
@@ -227,7 +227,7 @@ else:
     # ==========================================
     st.markdown("""
     <div class="price-section">
-        <div class="price-section-title pink">🚪 Ворота распашные — комплекты</div>
+        <div class="price-section-title pink">:material/door_open: Ворота распашные — комплекты</div>
         <table class="price-table">
             <tr><th>Модель</th><th>Ед.</th><th class="price-col">Цена</th></tr>
     """, unsafe_allow_html=True)
@@ -241,7 +241,7 @@ else:
     # ==========================================
     st.markdown("""
     <div class="price-section">
-        <div class="price-section-title orange">🚪 Калитки — комплекты</div>
+        <div class="price-section-title orange">:material/sensor_door: Калитки — комплекты</div>
         <table class="price-table">
             <tr><th>Модель</th><th>Ед.</th><th class="price-col">Цена</th></tr>
     """, unsafe_allow_html=True)
@@ -251,5 +251,5 @@ else:
     st.markdown(rows_html + "</table></div>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
-if st.button("⬅ Назад на главную", type="primary"):
+if st.button(":material/arrow_back: Назад на главную", type="primary"):
     st.switch_page("app.py")

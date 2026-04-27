@@ -4,7 +4,7 @@ import os
 
 st.set_page_config(
     page_title="OOO Дача 2000 | Умный Калькулятор",
-    page_icon="🏡",
+    page_icon=":material/home:",
     layout="wide"
 )
 
@@ -30,7 +30,7 @@ money_b64 = get_image_base64(money_img_path)
 # --- Переключатель темы ---
 col_empty, col_toggle = st.columns([8, 2])
 with col_toggle:
-    theme_choice = st.radio("Тема", ["Тёмная 🌙", "Светлая ☀️"], horizontal=True, label_visibility="collapsed")
+    theme_choice = st.radio("Тема", [":material/dark_mode: Тёмная", ":material/light_mode: Светлая"], horizontal=True, label_visibility="collapsed")
     st.session_state.theme = 'light' if "Светлая" in theme_choice else 'dark'
 
 is_light = st.session_state.theme == 'light'
@@ -157,12 +157,12 @@ st.markdown("""
 col1, col2, col3 = st.columns(3, gap="large")
 
 with col1:
-    img_tag_1 = f'<img src="data:image/png;base64,{terrace_b64}" class="card-image">' if terrace_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;">🏡</div>'
+    img_tag_1 = f'<img src="data:image/png;base64,{terrace_b64}" class="card-image">' if terrace_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;">:material/construction:</div>'
     
     st.markdown(f"""
     <div class="action-card">
         {img_tag_1}
-        <div class="card-title">Расчёт Террас</div>
+        <div class="card-title">:material/deck: Расчёт Террас</div>
         <div class="card-desc">
             Визуальный расчёт прямых, угловых и П-образных террас.
             Калькуляция материалов, смета шурфов и лаг.
@@ -173,12 +173,12 @@ with col1:
         st.switch_page("pages/terrace_calculator.py")
 
 with col2:
-    img_tag_2 = f'<img src="data:image/png;base64,{fence_b64}" class="card-image">' if fence_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;">🛡️</div>'
+    img_tag_2 = f'<img src="data:image/png;base64,{fence_b64}" class="card-image">' if fence_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;">:material/shield:</div>'
     
     st.markdown(f"""
     <div class="action-card">
         {img_tag_2}
-        <div class="card-title">Расчёт Заборов</div>
+        <div class="card-title">:material/fence: Расчёт Заборов</div>
         <div class="card-desc">
             Профлист, штакет, шахматка, жалюзи. Автоматический расчёт
             столбов, ворот, калиток и стоимости фундамента.
@@ -189,12 +189,12 @@ with col2:
         st.switch_page("pages/fence_calculator.py")
 
 with col3:
-    img_tag_3 = f'<img src="data:image/png;base64,{money_b64}" class="card-image">' if money_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;">📊</div>'
+    img_tag_3 = f'<img src="data:image/png;base64,{money_b64}" class="card-image">' if money_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;">:material/bar_chart:</div>'
     
     st.markdown(f"""
     <div class="action-card">
         {img_tag_3}
-        <div class="card-title">Прайс на работы</div>
+        <div class="card-title">:material/request_quote: Прайс на работы</div>
         <div class="card-desc">
             Актуальные расценки на строительные и монтажные работы по заборам.
         </div>

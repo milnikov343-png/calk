@@ -471,37 +471,37 @@ with st.container():
         st.markdown(f"""
         <div>
             <h2 style='margin:0; padding-top:8px; font-weight:800; color: {header_text};'>
-                🏗️ Умный Калькулятор Террас
+                :material/construction: Умный Калькулятор Террас
             </h2>
             <span style='color: #00b894; font-size: 0.9rem;'>ООО "Дача 2000" — Профессиональный расчёт стоимости</span>
         </div>
         """, unsafe_allow_html=True)
     with col_btn:
         st.markdown("<div style='padding-top:10px;'></div>", unsafe_allow_html=True)
-        if st.button("🔄 Обновить прайс", use_container_width=True):
+        if st.button(":material/refresh: Обновить прайс", use_container_width=True):
             st.cache_data.clear(); st.rerun()
 
-with st.expander("🛠️ ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (Нажмите, чтобы развернуть/свернуть)", expanded=True):
+with st.expander(":material/build: ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (Нажмите, чтобы развернуть/свернуть)", expanded=True):
     # ПЕРЕВОДИМ ИЗ 4 в 3 КОЛОНКИ: это уберет дыры и сделает всё плотнее
     c1, c2, c3 = st.columns(3, gap="medium")
     
     with c1:
-        st.markdown("#### 📏 1. Габариты и Бассейн")
+        st.markdown("#### :material/straighten: 1. Габариты и Бассейн")
         client_name = st.text_input("ФИО Клиента:", "Иван Иванович")
         
         st.markdown("**Менеджер проекта**")
         manager_name = st.text_input("Имя менеджера:", "Иван Иванов")
         manager_phone = st.text_input("Телефон менеджера:", "+7 (999) 000-00-00")
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
-        shape_type = st.selectbox("Конфигурация:", ["⬜ Прямоугольная (Стандарт)", "📐 Г-образная (Угловая)", "🔲 П-образная (С вырезом)", "⏺️ Округлая (Овал / Круг)", "✏️ Свой контур (По координатам)"])
+        shape_type = st.selectbox("Конфигурация:", [":material/rectangle: Прямоугольная (Стандарт)", ":material/architecture: Г-образная (Угловая)", ":material/crop_din: П-образная (С вырезом)", ":material/circle: Округлая (Овал / Круг)", ":material/draw: Свой контур (По координатам)"])
         
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
         
-        if shape_type == "⬜ Прямоугольная (Стандарт)":
+        if shape_type == ":material/rectangle: Прямоугольная (Стандарт)":
             c_l, c_w = st.columns(2)
             length = c_l.number_input("Длина (X), м:", 1.0, 50.0, 9.0)
             width = c_w.number_input("Глубина (Y), м:", 1.0, 50.0, 4.0)
-        elif shape_type == "⏺️ Округлая (Овал / Круг)":
+        elif shape_type == ":material/circle: Округлая (Овал / Круг)":
             length = st.number_input("Длина (Диам X), м:", 1.0, 50.0, 6.0)
             width = st.number_input("Глубина (Диам Y), м:", 1.0, 50.0, 4.0)
         else:
@@ -509,11 +509,11 @@ with st.expander("🛠️ ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (На
             length = 1.0; width = 1.0
 
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
-        has_pool = st.checkbox("🏊 Встроенный бассейн", value=False)
+        has_pool = st.checkbox(":material/pool: Встроенный бассейн", value=False)
         if has_pool:
-            pool_shape = st.radio("Форма бассейна:", ["⬜ Прямоугольный", "⏺️ Круглый", "⬭ Овальный"], horizontal=True)
+            pool_shape = st.radio("Форма бассейна:", [":material/rectangle: Прямоугольный", ":material/circle: Круглый", "⬭ Овальный"], horizontal=True)
             c_pl, c_pw = st.columns(2)
-            if pool_shape in ["⬜ Прямоугольный", "⬭ Овальный"]:
+            if pool_shape in [":material/rectangle: Прямоугольный", "⬭ Овальный"]:
                 pool_l = c_pl.number_input("Длина X, м:", 0.5, 20.0, 4.0)
                 pool_w = c_pw.number_input("Ширина Y, м:", 0.5, 20.0, 2.5)
             else:
@@ -524,7 +524,7 @@ with st.expander("🛠️ ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (На
             pool_offset_y = c_oy.number_input("Смещение Y, м:", 0.0, 50.0, 1.0)
 
     with c2:
-        st.markdown("#### 🪵 2. Обшивка и Периметр")
+        st.markdown("#### :material/forest: 2. Обшивка и Периметр")
         brand_choice = st.selectbox("Бренд:", list(PARSED_BOARDS.keys()))
         if PARSED_BOARDS[brand_choice]:
             collection_name = st.selectbox("Коллекция:", list(PARSED_BOARDS[brand_choice].keys()))
@@ -536,7 +536,7 @@ with st.expander("🛠️ ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (На
         
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
         
-        use_frame = st.checkbox("🔳 Окантовка (Picture Frame)", value=True)
+        use_frame = st.checkbox(":material/crop_din: Окантовка (Picture Frame)", value=True)
         if use_frame:
             c_f1, c_f2 = st.columns(2)
             edge_front = c_f1.checkbox("Спереди", value=True)
@@ -547,30 +547,37 @@ with st.expander("🛠️ ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (На
             edge_front = edge_back = edge_left = edge_right = False
 
     with c3:
-        st.markdown("#### 🏗️ 3. Фундамент и Каркас")
+        st.markdown("#### :material/foundation: 3. Фундамент и Каркас")
         base_type = st.radio("Основание:", ["Грунт (Сваи)", "Бетон"], horizontal=True)
         
+        st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
+        use_adjustable_supports = st.checkbox("На регулируемых опорах (HILST LIFT)", value=False)
+        if use_adjustable_supports:
+            joist_support_type = st.selectbox("Тип лаги для опор:", ["Лага ДПК", "Алюминиевая лага"])
+        else:
+            joist_support_type = None
+            
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
         steps_m = st.number_input("Ступени (м.п.):", 0.0, 50.0, 0.0)
         
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
-        joist_choice = st.selectbox("Лаги (много):", list(PIPES_JOIST.keys()))
+        joist_choice = st.selectbox("Лаги (металлокаркас):", list(PIPES_JOIST.keys()))
         frame_choice = st.selectbox("Каркас несущий:", list(PIPES_FRAME.keys())) if "Грунт" in base_type else None
 
 
 # --- НЕСТАНДАРТНЫЕ ФОРМЫ: ИНТЕРАКТИВНЫЙ КОНСТРУКТОР ---
-is_complex = shape_type in ["📐 Г-образная (Угловая)", "🔲 П-образная (С вырезом)", "✏️ Свой контур (По координатам)"]
+is_complex = shape_type in [":material/architecture: Г-образная (Угловая)", ":material/crop_din: П-образная (С вырезом)", ":material/draw: Свой контур (По координатам)"]
 
 if is_complex:
     st.markdown("---")
-    st.subheader("📐 Конструктор нестандартной террасы")
+    st.subheader(":material/architecture: Конструктор нестандартной террасы")
 
     # --- Панель управления холстом ---
     ctrl1, ctrl2 = st.columns([3, 1])
     with ctrl2:
         scale_label = st.selectbox("Масштаб:", ["Мелкий (до 7м)", "Средний (до 14м)", "Крупный (до 28м)"], index=1)
         mm_per_cell = {"Мелкий (до 7м)": 200, "Средний (до 14м)": 500, "Крупный (до 28м)": 1000}[scale_label]
-        draw_label = st.radio("Режим:", ["✏️ Рисовать", "↔️ Двигать"], horizontal=True)
+        draw_label = st.radio("Режим:", [":material/edit: Рисовать", ":material/swap_horiz: Двигать"], horizontal=True)
         drawing_mode = "polygon" if "Рисовать" in draw_label else "transform"
 
     canvas_w, canvas_h = 700, 450
@@ -579,10 +586,10 @@ if is_complex:
 
     with ctrl1:
         if "Рисовать" in draw_label:
-            st.info("🖱️ **Кликайте** по сетке, чтобы расставить вершины террасы. **Двойной клик** — замкнуть контур.")
+            st.info(":material/mouse: **Кликайте** по сетке, чтобы расставить вершины террасы. **Двойной клик** — замкнуть контур.")
         else:
-            st.info("🖱️ **Перетаскивайте** фигуру для настройки. Переключите на ✏️ для рисования новой.")
-        st.caption(f"📏 1 клетка = {mm_per_cell} мм ({mm_per_cell/1000:.1f} м) | Область: {canvas_w * mm_per_px / 1000:.0f} × {canvas_h * mm_per_px / 1000:.0f} м")
+            st.info(":material/mouse: **Перетаскивайте** фигуру для настройки. Переключите на :material/edit: для рисования новой.")
+        st.caption(f":material/straighten: 1 клетка = {mm_per_cell} мм ({mm_per_cell/1000:.1f} м) | Область: {canvas_w * mm_per_px / 1000:.0f} × {canvas_h * mm_per_px / 1000:.0f} м")
 
     # --- Фон холста ---
 
@@ -594,20 +601,20 @@ if is_complex:
         st.session_state.ai_drawing = None
 
     # Блок работы с ИИ
-    st.markdown("### 🤖 Автоматическое распознавание чертежа (ИИ)")
+    st.markdown("### :material/smart_toy: Автоматическое распознавание чертежа (ИИ)")
     with st.container():
         c_ai1, c_ai2 = st.columns([1, 1])
         with c_ai1:
             uploaded_img = st.file_uploader("Загрузите фото или скан чертежа с размерами (jpg, png)", type=["jpg", "jpeg", "png"])
         with c_ai2:
             api_key = st.text_input("Gemini API Key (Токен доступа)", type="password", help="Получите ключ бесплатно на aistudio.google.com")
-            if st.button("✨ Перевести чертеж в проект", use_container_width=True, type="primary"):
+            if st.button(":material/auto_awesome: Перевести чертеж в проект", use_container_width=True, type="primary"):
                 if not HAS_GENAI:
                     st.error("Библиотека google-generativeai не установлена. Введите в терминале: pip install google-generativeai pillow")
                 elif not api_key:
-                    st.warning("⚠️ Введите API ключ Gemini")
+                    st.warning(":material/warning: Введите API ключ Gemini")
                 elif not uploaded_img:
-                    st.warning("⚠️ Загрузите изображение чертежа")
+                    st.warning(":material/warning: Загрузите изображение чертежа")
                 else:
                     with st.spinner("Анализирую чертеж и размеры... это займет 5-10 секунд"):
                         try:
@@ -645,7 +652,7 @@ if is_complex:
                                         "stroke": "#0288d1", "strokeWidth": 2, "path": path_ai
                                     }]
                                 }
-                                st.success("✅ Чертеж успешно распознан и перенесен на сетку!")
+                                st.success(":material/check_circle: Чертеж успешно распознан и перенесен на сетку!")
                             else:
                                 st.error("Не удалось составить полигон из чертежа.")
                         except Exception as e:
@@ -654,7 +661,7 @@ if is_complex:
     initial_drawing = st.session_state.ai_drawing
 
     if initial_drawing is None:
-        if shape_type == "📐 Г-образная (Угловая)":
+        if shape_type == ":material/architecture: Г-образная (Угловая)":
             pts = [(ox, oy), (ox + 6000 * s, oy), (ox + 6000 * s, oy + 3000 * s),
                    (ox + 3000 * s, oy + 3000 * s), (ox + 3000 * s, oy + 5000 * s), (ox, oy + 5000 * s)]
             path = [["M", pts[0][0], pts[0][1]]]
@@ -666,7 +673,7 @@ if is_complex:
                 "strokeWidth": 2, "path": path}]}
 
 
-    elif shape_type == "🔲 П-образная (С вырезом)":
+    elif shape_type == ":material/crop_din: П-образная (С вырезом)":
         A, B, E, F = 8000, 5000, 4000, 3000
         pts = [(ox, oy), (ox + A * s, oy), (ox + A * s, oy + B * s),
                (ox + (A + E) / 2 * s, oy + B * s), (ox + (A + E) / 2 * s, oy + (B - F) * s),
@@ -776,10 +783,10 @@ if is_complex:
             </text>
         </svg>'''
 
-        st.markdown("### 📏 Чертёж с размерами")
+        st.markdown("### :material/straighten: Чертёж с размерами")
         st.markdown(svg_code, unsafe_allow_html=True)
 
-        with st.expander("📋 Таблица сторон", expanded=False):
+        with st.expander(":material/list_alt: Таблица сторон", expanded=False):
             side_data = [{"Сторона": f"{i + 1} → {(i + 1) % n + 1}", "Длина (мм)": sides_mm[i],
                           "Вершина": f"({vertices_mm[i][0]}, {vertices_mm[i][1]})"} for i in range(n)]
             st.dataframe(pd.DataFrame(side_data), use_container_width=True, hide_index=True)
@@ -788,13 +795,13 @@ if is_complex:
         width = range_y / 1000.0
     else:
         st.markdown("<div style='text-align:center; padding: 1rem; color: #888; font-size: 1.1rem;'>" +
-                    "👆 Нарисуйте контур террасы на холсте выше</div>", unsafe_allow_html=True)
+                    ":material/touch_app: Нарисуйте контур террасы на холсте выше</div>", unsafe_allow_html=True)
         length = 1.0
         width = 1.0
 
     # --- ПОЛНЫЙ РАСЧЁТ НЕСТАНДАРТНОЙ ТЕРРАСЫ ---
     if len(vertices_mm) < 3:
-        st.info("👆 Нарисуйте контур на холсте, затем нажмите кнопку.")
+        st.info(":material/touch_app: Нарисуйте контур на холсте, затем нажмите кнопку.")
         st.stop()
 
     # Координаты в метрах
@@ -861,6 +868,26 @@ if is_complex:
                     pile_positions.append((px, py))
     piles = len(pile_positions)
 
+    # Регулируемые опоры HILST LIFT
+    support_positions = []
+    if use_adjustable_supports:
+        support_step_x = 0.4 # Шаг между лагами
+        support_step_y = 0.4 if joist_support_type == "Лага ДПК" else 1.0
+        
+        sr = math.ceil(poly_w / support_step_x) + 1
+        sc = math.ceil(poly_h / support_step_y) + 1
+        step_x_s = poly_w / (sr - 1) if sr > 1 else poly_w
+        step_y_s = poly_h / (sc - 1) if sc > 1 else poly_h
+        
+        for i in range(sr):
+            for j in range(sc):
+                px = min_xm + i * step_x_s
+                py = min_ym + j * step_y_s
+                if point_in_polygon(px, py, verts_m):
+                    support_positions.append((px, py))
+    supports_count = len(support_positions)
+    supports_total = supports_count * 450 # Примерная цена за опору 450 руб
+
     # Каркас
     f_m = math.ceil(pc * poly_w) if frame_choice and "Грунт" in base_type else 0
     f_total = f_m * round(PIPES_FRAME[frame_choice] * METAL_MARGIN) if frame_choice and "Грунт" in base_type else 0
@@ -873,6 +900,7 @@ if is_complex:
     work_base = poly_area * 2400
     work_steps = steps_m * 5200
     work_piles = piles * 3600
+    work_supports = supports_count * 200 # Монтаж опор
 
     # Сметы
     mat_data = [{"Позиция": f"Доска террасная: {nm}", "Кол-во": f"{dt['qty']} шт", "Сумма": dt['sum']} for nm, dt in board_totals.items()]
@@ -882,12 +910,17 @@ if is_complex:
     ])
     if f_total > 0:
         mat_data.insert(len(board_totals), {"Позиция": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
+        
+    if supports_count > 0:
+        mat_data.append({"Позиция": f"Регулируемые опоры HILST LIFT (под {joist_support_type})", "Кол-во": f"{supports_count} шт.", "Сумма": supports_total})
 
     work_data = [{"Позиция": "Монтаж настила", "Сумма": work_base}]
     if steps_m > 0:
         work_data.append({"Позиция": "Монтаж ступеней", "Сумма": work_steps})
     if piles > 0:
         work_data.append({"Позиция": f"Монтаж свай ({piles} шт)", "Сумма": work_piles})
+    if supports_count > 0:
+        work_data.append({"Позиция": f"Монтаж регулируемых опор ({supports_count} шт)", "Сумма": work_supports})
 
     grand_total = sum(d['Сумма'] for d in mat_data) + sum(d['Сумма'] for d in work_data)
 
@@ -927,11 +960,17 @@ if is_complex:
             ax.text((min_xm + max_xm) / 2, min_ym - 0.4, "Синим: Сетка лаг | Голубым: Парные лаги | Красным: Несущие балки", color='blue', ha='center', fontsize=10)
 
         elif mode == "piles":
-            for px, py in pile_positions:
-                ax.add_patch(patches.Circle((px, py), 0.12, color='black'))
-            # Размеры между сваями
-            if len(pile_positions) >= 2:
-                ax.text((min_xm + max_xm) / 2, min_ym - 0.4, f"Свай: {piles} шт | Шаг: ~{int(step_x_p*1000)}×{int(step_y_p*1000)} мм", ha='center', fontsize=10)
+            if use_adjustable_supports:
+                for px, py in support_positions:
+                    ax.add_patch(patches.Circle((px, py), 0.08, color='orange', alpha=0.7))
+                if len(support_positions) >= 2:
+                    ax.text((min_xm + max_xm) / 2, min_ym - 0.4, f"Опор HILST: {supports_count} шт | Шаг: ~{int(step_x_s*1000)}×{int(step_y_s*1000)} мм", ha='center', fontsize=10, color='darkorange')
+            else:
+                for px, py in pile_positions:
+                    ax.add_patch(patches.Circle((px, py), 0.12, color='black'))
+                # Размеры между сваями
+                if len(pile_positions) >= 2:
+                    ax.text((min_xm + max_xm) / 2, min_ym - 0.4, f"Свай: {piles} шт | Шаг: ~{int(step_x_p*1000)}×{int(step_y_p*1000)} мм", ha='center', fontsize=10)
 
         ax.set_xlim(min_xm - 1.0, max_xm + 1.0)
         ax.set_ylim(min_ym - 1.2, max_ym + 0.5)
@@ -979,9 +1018,9 @@ if is_complex:
 
     st.markdown("<br>", unsafe_allow_html=True)
     colA, colB = st.columns(2)
-    colA.markdown("#### 🧱 Смета материалов")
+    colA.markdown("#### :material/inventory: Смета материалов")
     colA.table(mat_data)
-    colB.markdown("#### 🛠️ Смета работ")
+    colB.markdown("#### :material/construction: Смета работ")
     colB.table(work_data)
     st.divider()
 
@@ -1038,10 +1077,10 @@ if is_complex:
 
     col_dl1, col_dl2, col_dl3 = st.columns([1, 2, 1])
     with col_dl2:
-        st.download_button("📥 СКАЧАТЬ ПРОЕКТ (PDF)", data=create_poly_pdf(), file_name=f"Terrasa_{client_name}.pdf", mime="application/pdf", use_container_width=True)
+        st.download_button(":material/download: СКАЧАТЬ ПРОЕКТ (PDF)", data=create_poly_pdf(), file_name=f"Terrasa_{client_name}.pdf", mime="application/pdf", use_container_width=True)
 
     st.divider()
-    st.subheader("📐 Технические схемы")
+    st.subheader(":material/architecture: Технические схемы")
     t1, t2, t3 = st.tabs(["Вид настила", "Металлокаркас", "Свайное поле"])
     with t1: st.image(get_poly_plot("board"), caption="Раскладка доски внутри контура.")
     with t2: st.image(get_poly_plot("frame"), caption="Голубые линии — парные лаги под стыки.")
@@ -1052,13 +1091,13 @@ if is_complex:
     st.stop()
 
 # Блокировка округлой формы и бассейна
-if shape_type == "⏺️ Округлая (Овал / Круг)":
-    st.warning("⏺️ Модуль расчёта округлых террас в разработке.")
+if shape_type == ":material/circle: Округлая (Овал / Круг)":
+    st.warning(":material/circle: Модуль расчёта округлых террас в разработке.")
     st.info("Переключитесь на «Прямоугольную (Стандарт)» для полного расчёта.")
     st.stop()
 
 if has_pool:
-    st.warning("🏊 Модуль вырезов под бассейн в разработке.")
+    st.warning(":material/pool: Модуль вырезов под бассейн в разработке.")
     st.info("Уберите галочку бассейна для полного расчёта.")
     st.stop()
 
@@ -1125,6 +1164,17 @@ j_total = j_m * round(PIPES_JOIST[joist_choice] * METAL_MARGIN)
 
 pr = math.ceil(length/PILE_STEP_M) + 1; pc = math.ceil(width/PILE_STEP_M) + 1
 piles = pr * pc if "Грунт" in base_type else 0
+
+supports_count = 0
+supports_total = 0
+if use_adjustable_supports:
+    support_step_x = 0.4
+    support_step_y = 0.4 if joist_support_type == "Лага ДПК" else 1.0
+    sr = math.ceil(length / support_step_x) + 1
+    sc = math.ceil(width / support_step_y) + 1
+    supports_count = sr * sc
+    supports_total = supports_count * 450 # Примерная цена за опору
+
 f_m = math.ceil(pc * length) if "Вдоль" in direction_choice else math.ceil(pr * width)
 f_total = f_m * round(PIPES_FRAME[frame_choice] * METAL_MARGIN) if frame_choice and "Грунт" in base_type else 0
 
@@ -1132,15 +1182,18 @@ clips_packs = math.ceil((math.ceil(width/eff_w) * joist_count_total) / 100)
 clips_total = clips_packs * 2200
 
 work_base = area * 2400; work_steps = steps_m * 5200; work_piles = piles * 3600
+work_supports = supports_count * 200
 
 # Таблицы
 mat_data = [{"Позиция": f"Доска террасная/торцевая: {name}", "Кол-во": f"{data['qty']} шт", "Сумма": data['sum']} for name, data in board_totals.items()]
 mat_data.extend([{"Позиция": f"Лага {joist_choice} (вкл. парные лаги на стыках)", "Кол-во": f"{j_m} м.п.", "Сумма": j_total}, {"Позиция": "Кляймеры (уп. 100 шт)", "Кол-во": f"{clips_packs} уп.", "Сумма": clips_total}])
 if frame_choice and "Грунт" in base_type: mat_data.insert(len(board_totals), {"Позиция": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
+if supports_count > 0: mat_data.append({"Позиция": f"Регулируемые опоры HILST LIFT (под {joist_support_type})", "Кол-во": f"{supports_count} шт.", "Сумма": supports_total})
 
 work_data = [{"Позиция": "Монтаж настила", "Сумма": work_base}]
 if steps_m > 0: work_data.append({"Позиция": "Монтаж ступеней", "Сумма": work_steps})
 if piles > 0: work_data.append({"Позиция": f"Монтаж свай ({piles} шт)", "Сумма": work_piles})
+if supports_count > 0: work_data.append({"Позиция": f"Монтаж регулируемых опор ({supports_count} шт)", "Сумма": work_supports})
 
 grand_total = sum(d['Сумма'] for d in mat_data) + sum(d['Сумма'] for d in work_data)
 
@@ -1242,12 +1295,27 @@ def get_plot(mode):
         ax.text(length/2, -0.3, "Синим: Сетка лаг | Голубым: Парные лаги | Красным: Несущие балки", color='blue', ha='center', fontsize=10)
 
     elif mode == "piles":
-        for i in range(pr):
-            for j in range(pc):
-                px, py = i * step_x, j * step_y
-                ax.add_patch(patches.Circle((px, py), 0.15, color='black'))
-                if i < pr - 1 and j == 0: ax.text(px + step_x/2, py-0.4, f"{int(step_x*1000)} мм", ha='center', fontsize=9)
-                if j < pc - 1 and i == 0: ax.text(px-0.8, py + step_y/2, f"{int(step_y*1000)} мм", va='center', rotation=90, fontsize=9)
+        if use_adjustable_supports:
+            support_step_x = 0.4
+            support_step_y = 0.4 if joist_support_type == "Лага ДПК" else 1.0
+            sr = math.ceil(length / support_step_x) + 1
+            sc = math.ceil(width / support_step_y) + 1
+            step_x_s = length / (sr - 1) if sr > 1 else length
+            step_y_s = width / (sc - 1) if sc > 1 else width
+            
+            for i in range(sr):
+                for j in range(sc):
+                    px, py = i * step_x_s, j * step_y_s
+                    ax.add_patch(patches.Circle((px, py), 0.1, color='orange', alpha=0.7))
+                    if i < sr - 1 and j == 0: ax.text(px + step_x_s/2, py-0.4, f"{int(step_x_s*1000)} мм", ha='center', fontsize=8, color='darkorange')
+                    if j < sc - 1 and i == 0: ax.text(px-0.6, py + step_y_s/2, f"{int(step_y_s*1000)} мм", va='center', rotation=90, fontsize=8, color='darkorange')
+        else:
+            for i in range(pr):
+                for j in range(pc):
+                    px, py = i * step_x, j * step_y
+                    ax.add_patch(patches.Circle((px, py), 0.15, color='black'))
+                    if i < pr - 1 and j == 0: ax.text(px + step_x/2, py-0.4, f"{int(step_x*1000)} мм", ha='center', fontsize=9)
+                    if j < pc - 1 and i == 0: ax.text(px-0.8, py + step_y/2, f"{int(step_y*1000)} мм", va='center', rotation=90, fontsize=9)
 
     ax.set_xlim(-1.0, length+1.0); ax.set_ylim(-1.2, width+0.5); ax.set_aspect('equal'); plt.axis('off')
     buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150); plt.close(fig); buf.seek(0)
@@ -1342,18 +1410,18 @@ with m4:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-with st.expander("📊 Детализация по рядам (Точный расчет)", expanded=False):
+with st.expander(":material/bar_chart: Детализация по рядам (Точный расчет)", expanded=False):
     st.dataframe(detail_df, use_container_width=True, hide_index=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 colA, colB = st.columns(2)
-colA.markdown("#### 🧱 Смета материалов")
+colA.markdown("#### :material/inventory: Смета материалов")
 colA.table(mat_data)
-colB.markdown("#### 🛠️ Смета работ")
+colB.markdown("#### :material/construction: Смета работ")
 colB.table(work_data)
 col_dl1, col_dl2, col_dl3 = st.columns([1, 2, 1])
-with col_dl2: st.download_button("📥 СКАЧАТЬ ПОЛНЫЙ ПРОЕКТ (PDF)", data=create_pdf(), file_name=f"Terrasa_{client_name}.pdf", mime="application/pdf", use_container_width=True)
-st.divider(); st.subheader("📐 Технические схемы (Размеры в мм)")
+with col_dl2: st.download_button(":material/download: СКАЧАТЬ ПОЛНЫЙ ПРОЕКТ (PDF)", data=create_pdf(), file_name=f"Terrasa_{client_name}.pdf", mime="application/pdf", use_container_width=True)
+st.divider(); st.subheader(":material/architecture: Технические схемы (Размеры в мм)")
 t1, t2, t3 = st.tabs(["Вид настила", "Металлокаркас", "Свайное поле"])
 with t1: st.image(get_plot("board"), caption="Ритм 'кирпичная кладка'. Без внутренних обрезков. Швы разведены.")
 with t2: st.image(get_plot("frame"), caption="Голубые линии — парные лаги под каждый стык.")
@@ -1365,7 +1433,7 @@ with t3:
 # CRM И ЭКСПОРТ (БИЗНЕС-БЛОК)
 # ============================================================
 st.markdown("---")
-st.markdown("### 💼 Интеграции и Сохранение")
+st.markdown("### :material/work: Интеграции и Сохранение")
 
 # Собираем параметры проекта
 export_params = {
@@ -1391,7 +1459,7 @@ with col_export:
     st.info("Экспорт данных проекта в формате JSON для интеграций или архива.")
     export_json = json.dumps(export_params, ensure_ascii=False, indent=2)
     st.download_button(
-        "💾 Сохранить проект (JSON)",
+        ":material/save: Сохранить проект (JSON)",
         data=export_json,
         file_name=f"project_terrace_{datetime.date.today()}.json",
         mime="application/json",
@@ -1401,16 +1469,16 @@ with col_export:
 with col_crm:
     st.info("Отправка заявки в CRM-систему через Webhook (Битрикс24, amoCRM).")
     crm_webhook = st.text_input("Webhook URL CRM:", placeholder="https://your-crm.bitrix24.ru/rest/...", label_visibility="collapsed")
-    if st.button("🚀 Отправить лид в CRM", use_container_width=True):
+    if st.button(":material/rocket_launch: Отправить лид в CRM", use_container_width=True):
         if crm_webhook:
             try:
                 import requests
                 resp = requests.post(crm_webhook, json={"project_type": "terrace", "data": export_params, "total": grand_total})
                 if resp.status_code in [200, 201]:
-                    st.success("✅ Заявка успешно отправлена в CRM!")
+                    st.success(":material/check_circle: Заявка успешно отправлена в CRM!")
                 else:
-                    st.error(f"❌ Ошибка отправки: статус {resp.status_code}")
+                    st.error(f":material/cancel: Ошибка отправки: статус {resp.status_code}")
             except Exception as e:
-                st.error(f"❌ Ошибка соединения: {e}")
+                st.error(f":material/cancel: Ошибка соединения: {e}")
         else:
-            st.warning("⚠️ Введите URL Webhook")
+            st.warning(":material/warning: Введите URL Webhook")
