@@ -401,7 +401,7 @@ def calculate_fence(params, prices, proflist, shtaket, parsed_data):
             # Лаги — только если есть свободное пространство
             if free_space > 0 and sections > 0:
                 actual_section_width = free_space / sections
-                lag_total_count = sections * lag_rows
+                lag_total_count = lag_total_count = sections * lag_rows if material_type in ["Профнастил", "Штакет", "Шахматка"] else 0
             else:
                 actual_section_width = 0
                 lag_total_count = 0
@@ -422,7 +422,7 @@ def calculate_fence(params, prices, proflist, shtaket, parsed_data):
             if available_length == 0:
                 post_count = 0
 
-            lag_total_count = section_count * lag_rows
+            lag_total_count = lag_total_count = section_count * lag_rows if material_type in ["Профнастил", "Штакет", "Шахматка"] else 0
 
             if available_length > 0:
                 calc_element_profile(available_length, height)
@@ -1439,6 +1439,7 @@ expander_text = "#059669" if is_light else "#00b894"
 
 st.markdown(f"""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0');
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 /* Скрываем сайдбар */
@@ -1600,7 +1601,7 @@ with st.container():
         st.markdown(f"""
         <div>
             <h2 style='margin:0; padding-top:8px; font-weight:800; color: {header_text};'>
-                :material/home: Калькулятор заборов
+                <span class='material-symbols-outlined' style='vertical-align: bottom;'>home</span> Калькулятор заборов
             </h2>
             <span style='color: #00b894; font-size: 0.9rem;'>ООО "Дача 2000" — Профессиональный расчёт стоимости</span>
         </div>
@@ -1898,7 +1899,13 @@ with st.expander(":material/settings: ПАРАМЕТРЫ ЗАБОРА (Нажм�
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
 
         # --- Тип столбов ---
-        post_type = st.selectbox("Тип столбов:", ["Металлические", "Кирпичные"], key="post_type_sel")
+        if st.session_state.get("has_fund_checkbox", True):
+# --- Тип столбов ---
+            post_type = st.selectbox("Тип столбов:", ["Металлические", "Кирпичные"], key="post_type_sel")
+# --- Тип столбов ---
+        else:
+# --- Тип столбов ---
+            post_type = "Металлические"
         post_type_val = "brick" if post_type == "Кирпичные" else "metal"
 
         if post_type_val == "metal":
@@ -1911,11 +1918,22 @@ with st.expander(":material/settings: ПАРАМЕТРЫ ЗАБОРА (Нажм�
             brick_type_val = "полуторный" if brick_type == "Полуторный" else "одинарный"
             brick_seam = st.selectbox("Толщина шва:", ["10 мм", "8 мм"], key="brick_seam_sel")
             brick_seam_val = 10 if brick_seam == "10 мм" else 8
-
         # --- Тип трубы для лаг ---
-        lag_pipe_type = st.selectbox("Труба для лаг:", ["40x20x1.5 мм", "40x20x2 мм"], key="lag_pipe_sel")
-        lag_pipe_val = "40x20x2" if "2 мм" in lag_pipe_type else "40x20x1.5"
-        lag_rows = st.radio("Количество рядов лаг:", [2, 3], horizontal=True)
+        show_lags = False
+        if calc_mode == "express":
+            show_lags = material_type in ["Профнастил", "Штакет", "Шахматка"]
+        else:
+            show_lags = any(s["material_type"] in ["Профнастил", "Штакет", "Шахматка"] for s in sides_data)
+
+        if show_lags:
+            lag_pipe_type = st.selectbox("Труба для лаг:", ["40x20x1.5 мм", "40x20x2 мм"], key="lag_pipe_sel")
+            lag_pipe_val = "40x20x2" if "2 мм" in lag_pipe_type else "40x20x1.5"
+            lag_rows = st.radio("Количество рядов лаг:", [2, 3], horizontal=True)
+        else:
+            lag_pipe_type = "40x20x1.5 мм"
+            lag_pipe_val = "40x20x1.5"
+            lag_rows = 2
+
 
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
 
@@ -1946,7 +1964,7 @@ with st.expander(":material/settings: ПАРАМЕТРЫ ЗАБОРА (Нажм�
 
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.2;'>", unsafe_allow_html=True)
 
-        has_fundament = st.checkbox("Рассчитать фундамент", value=True)
+        has_fundament = st.checkbox("Рассчитать фундамент", value=True, key="has_fund_checkbox")
         if has_fundament:
             fund_length = st.number_input("Длина фундамента (м.п.):", 1.0, 500.0, 64.0)
             fund_width = st.number_input("Ширина фундамента (м):", 0.1, 2.0, 0.25, step=0.05)
