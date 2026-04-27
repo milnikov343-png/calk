@@ -292,39 +292,53 @@ def polygon_row_segments(vertices, y):
 # --- 3. ИНТЕРФЕЙС И ВЫБОР ФОРМЫ ---
 st.set_page_config(page_title="Дача 2000 | Умный Калькулятор", layout="wide", initial_sidebar_state="collapsed")
 
-st.markdown("""
+# --- Тема оформления ---
+is_light = st.session_state.get('theme', 'dark') == 'light'
+
+bg_app = "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)" if is_light else "linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 40%, #16213e 100%)"
+text_color = "#1e293b !important" if is_light else "#f8f9fa !important"
+header_bg = "linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.95))" if is_light else "linear-gradient(135deg, rgba(30, 60, 90, 0.95), rgba(20, 40, 70, 0.95))"
+header_text = "#0f172a" if is_light else "#e0e0e0"
+card_bg = "linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(241, 245, 249, 0.95))" if is_light else "linear-gradient(135deg, rgba(30, 50, 80, 0.8), rgba(20, 35, 60, 0.9))"
+card_border = "rgba(16, 185, 129, 0.3)" if is_light else "rgba(0, 184, 148, 0.3)"
+card_shadow = "0 4px 10px rgba(0,0,0,0.05)" if is_light else "0 4px 20px rgba(0, 0, 0, 0.3)"
+card_hover_shadow = "0 8px 20px rgba(16, 185, 129, 0.15)" if is_light else "0 8px 30px rgba(0, 184, 148, 0.2)"
+panel_bg = "rgba(255, 255, 255, 0.7)" if is_light else "rgba(25, 40, 65, 0.6)"
+panel_border = "rgba(0, 0, 0, 0.1)" if is_light else "rgba(255, 255, 255, 0.08)"
+label_color = "#64748b" if is_light else "#8899aa"
+metric_val = "linear-gradient(135deg, #059669, #10b981)" if is_light else "linear-gradient(135deg, #00b894, #00cec9)"
+input_label = "#475569 !important" if is_light else "#b0bec5 !important"
+tab_text = "#64748b !important" if is_light else "#8899aa !important"
+tab_active = "#059669 !important" if is_light else "#00b894 !important"
+expander_text = "#059669" if is_light else "#00b894"
+
+st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 /* Скрываем сайдбар */
-[data-testid="collapsedControl"] { display: none; }
-section[data-testid="stSidebar"] { display: none; }
+[data-testid="collapsedControl"] {{ display: none; }}
+section[data-testid="stSidebar"] {{ display: none; }}
 
 /* Основной фон */
-.stApp {
-    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 40%, #16213e 100%);
-}
+.stApp {{
+    background: {bg_app};
+}}
 
 /* Шрифт и читаемость текста */
-html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li {
+html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li {{
     font-family: 'Inter', sans-serif;
-    color: #f8f9fa !important;
-}
+    color: {text_color};
+}}
 
 /* Исправление цвета текста в выпадающих списках (selectbox) */
-div[data-baseweb="select"] * {
-    color: #000000 !important;
-}
-div[data-baseweb="popover"] * {
-    color: #000000 !important;
-}
-li[role="option"] * {
-    color: #000000 !important;
-}
+div[data-baseweb="select"] * {{ color: #000000 !important; }}
+div[data-baseweb="popover"] * {{ color: #000000 !important; }}
+li[role="option"] * {{ color: #000000 !important; }}
 
 /* Заголовок-шапка */
-.header-bar {
-    background: linear-gradient(135deg, rgba(30, 60, 90, 0.95), rgba(20, 40, 70, 0.95));
+.header-bar {{
+    background: {header_bg};
     backdrop-filter: blur(12px);
     border-bottom: 2px solid #00b894;
     padding: 0.7rem 1.5rem;
@@ -334,95 +348,115 @@ li[role="option"] * {
     display: flex;
     align-items: center;
     gap: 1rem;
-}
-
-/* Делаем её прилипающей вместо стандартного блока */
-div[data-testid="stVerticalBlock"] > div:first-of-type {
-    position: sticky;
-    top: 0px;
-    z-index: 999;
-}
+}}
+.header-bar h2 {{
+    color: {header_text};
+    margin: 0;
+    font-weight: 800;
+    font-size: 1.4rem;
+}}
+.header-bar span {{
+    color: #00b894;
+    font-weight: 300;
+    font-size: 1rem;
+}}
 
 /* Карточки метрик */
-.metric-card {
-    background: linear-gradient(135deg, rgba(30, 50, 80, 0.8), rgba(20, 35, 60, 0.9));
-    border: 1px solid rgba(0, 184, 148, 0.3);
+.metric-card {{
+    background: {card_bg};
+    border: 1px solid {card_border};
     border-radius: 16px;
     padding: 1.2rem 1.5rem;
     text-align: center;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: {card_shadow};
     transition: all 0.3s ease;
-}
-.metric-card:hover {
+}}
+.metric-card:hover {{
     transform: translateY(-3px);
     border-color: rgba(0, 184, 148, 0.6);
-    box-shadow: 0 8px 30px rgba(0, 184, 148, 0.2);
-}
-.metric-card .label {
-    color: #8899aa;
+    box-shadow: {card_hover_shadow};
+}}
+.metric-card .label {{
+    color: {label_color};
     font-size: 0.85rem;
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 1px;
     margin-bottom: 0.4rem;
-}
-.metric-card .value {
+}}
+.metric-card .value {{
     font-size: 1.8rem;
     font-weight: 800;
-    background: linear-gradient(135deg, #00b894, #00cec9);
+    background: {metric_val};
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-}
-.metric-card .value.orange {
-    background: linear-gradient(135deg, #fdcb6e, #e17055);
+}}
+.metric-card .value.orange {{
+    background: linear-gradient(135deg, #f59e0b, #ea580c);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-}
-.metric-card .value.blue {
-    background: linear-gradient(135deg, #74b9ff, #0984e3);
+}}
+.metric-card .value.blue {{
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-}
-.metric-card .value.total {
+}}
+.metric-card .value.total {{
     font-size: 2.2rem;
-    background: linear-gradient(135deg, #ffeaa7, #fdcb6e, #e17055);
+    background: linear-gradient(135deg, #f59e0b, #ea580c, #dc2626);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-}
+}}
+
+/* Секция-панель */
+.panel {{
+    background: {panel_bg};
+    border: 1px solid {panel_border};
+    border-radius: 16px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 1rem;
+    backdrop-filter: blur(8px);
+}}
+.panel h4 {{
+    color: #00b894;
+    margin-top: 0;
+    margin-bottom: 0.8rem;
+    font-weight: 700;
+}}
+
+/* Таблица */
+.stDataFrame, table {{
+    border-radius: 12px !important;
+    overflow: hidden;
+}}
+
+/* Вкладки */
+div[data-testid="stTabs"] button {{
+    color: {tab_text};
+    font-weight: 600 !important;
+}}
+div[data-testid="stTabs"] button[aria-selected="true"] {{
+    color: {tab_active};
+    border-bottom-color: {tab_active};
+}}
 
 /* Фикс стилей инпутов */
 div[data-testid="stNumberInput"] label p,
 div[data-testid="stSelectbox"] label p,
 div[data-testid="stRadio"] label p,
 div[data-testid="stCheckbox"] label p,
-div[data-testid="stTextInput"] label p {
+div[data-testid="stTextInput"] label p {{
     font-size: 13px !important;
     font-weight: 500 !important;
-    color: #b0bec5 !important;
-}
+    color: {input_label};
+}}
 
 /* Экспандеры */
-div[data-testid="stExpander"] details summary p {
+div[data-testid="stExpander"] details summary p {{
     font-size: 1.1rem;
     font-weight: 700;
-    color: #00b894;
-}
-
-/* Таблица */
-.stDataFrame, table {
-    border-radius: 12px !important;
-    overflow: hidden;
-}
-
-/* Вкладки */
-div[data-testid="stTabs"] button {
-    color: #8899aa !important;
-    font-weight: 600 !important;
-}
-div[data-testid="stTabs"] button[aria-selected="true"] {
-    color: #00b894 !important;
-    border-bottom-color: #00b894 !important;
-}
+    color: {expander_text};
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -434,9 +468,9 @@ with st.container():
         except:
             st.markdown("<h3 style='color:#00b894; margin:0;'>Дача 2000</h3>", unsafe_allow_html=True)
     with col_title:
-        st.markdown("""
+        st.markdown(f"""
         <div>
-            <h2 style='margin:0; padding-top:8px; font-weight:800; color: #e0e0e0;'>
+            <h2 style='margin:0; padding-top:8px; font-weight:800; color: {header_text};'>
                 🏗️ Умный Калькулятор Террас
             </h2>
             <span style='color: #00b894; font-size: 0.9rem;'>ООО "Дача 2000" — Профессиональный расчёт стоимости</span>
@@ -452,7 +486,7 @@ with st.expander("🛠️ ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (На
     c1, c2, c3 = st.columns(3, gap="medium")
     
     with c1:
-        st.markdown("#### 📐 1. Габариты и Бассейн")
+        st.markdown("#### 📏 1. Габариты и Бассейн")
         client_name = st.text_input("ФИО Клиента:", "Иван Иванович")
         
         st.markdown("**Менеджер проекта**")
@@ -513,7 +547,7 @@ with st.expander("🛠️ ПАРАМЕТРЫ РАСЧЕТА ТЕРРАСЫ (На
             edge_front = edge_back = edge_left = edge_right = False
 
     with c3:
-        st.markdown("#### ⛓️ 3. Фундамент и Каркас")
+        st.markdown("#### 🏗️ 3. Фундамент и Каркас")
         base_type = st.radio("Основание:", ["Грунт (Сваи)", "Бетон"], horizontal=True)
         
         st.markdown("<hr style='margin: 0.5rem 0; opacity: 0.3;'>", unsafe_allow_html=True)
@@ -621,15 +655,16 @@ if is_complex:
 
     if initial_drawing is None:
         if shape_type == "📐 Г-образная (Угловая)":
-        pts = [(ox, oy), (ox + 6000 * s, oy), (ox + 6000 * s, oy + 3000 * s),
-               (ox + 3000 * s, oy + 3000 * s), (ox + 3000 * s, oy + 5000 * s), (ox, oy + 5000 * s)]
-        path = [["M", pts[0][0], pts[0][1]]]
-        for p in pts[1:]:
-            path.append(["L", p[0], p[1]])
-        path.append(["z"])
-        initial_drawing = {"version": "4.4.0", "objects": [{"type": "path", "version": "4.4.0",
-            "left": 0, "top": 0, "fill": "rgba(165,214,167,0.3)", "stroke": "#2e7d32",
-            "strokeWidth": 2, "path": path}]}
+            pts = [(ox, oy), (ox + 6000 * s, oy), (ox + 6000 * s, oy + 3000 * s),
+                   (ox + 3000 * s, oy + 3000 * s), (ox + 3000 * s, oy + 5000 * s), (ox, oy + 5000 * s)]
+            path = [["M", pts[0][0], pts[0][1]]]
+            for p in pts[1:]:
+                path.append(["L", p[0], p[1]])
+            path.append(["z"])
+            initial_drawing = {"version": "4.4.0", "objects": [{"type": "path", "version": "4.4.0",
+                "left": 0, "top": 0, "fill": "rgba(165,214,167,0.3)", "stroke": "#2e7d32",
+                "strokeWidth": 2, "path": path}]}
+
 
     elif shape_type == "🔲 П-образная (С вырезом)":
         A, B, E, F = 8000, 5000, 4000, 3000
@@ -944,9 +979,9 @@ if is_complex:
 
     st.markdown("<br>", unsafe_allow_html=True)
     colA, colB = st.columns(2)
-    colA.markdown("#### 🪵 Смета материалов")
+    colA.markdown("#### 🧱 Смета материалов")
     colA.table(mat_data)
-    colB.markdown("#### ⚒️ Смета работ")
+    colB.markdown("#### 🛠️ Смета работ")
     colB.table(work_data)
     st.divider()
 
@@ -1312,9 +1347,9 @@ with st.expander("📊 Детализация по рядам (Точный ра
 
 st.markdown("<br>", unsafe_allow_html=True)
 colA, colB = st.columns(2)
-colA.markdown("#### 🪵 Смета материалов")
+colA.markdown("#### 🧱 Смета материалов")
 colA.table(mat_data)
-colB.markdown("#### ⚒️ Смета работ")
+colB.markdown("#### 🛠️ Смета работ")
 colB.table(work_data)
 col_dl1, col_dl2, col_dl3 = st.columns([1, 2, 1])
 with col_dl2: st.download_button("📥 СКАЧАТЬ ПОЛНЫЙ ПРОЕКТ (PDF)", data=create_pdf(), file_name=f"Terrasa_{client_name}.pdf", mime="application/pdf", use_container_width=True)
