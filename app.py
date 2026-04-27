@@ -53,6 +53,7 @@ dummy_img_bg = "#e2e8f0" if is_light else "#333"
 # --- Эстетика стартовой страницы ---
 st.markdown(f"""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0');
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
 
 html, body, [class*="css"] {{
@@ -157,12 +158,12 @@ st.markdown("""
 col1, col2, col3 = st.columns(3, gap="large")
 
 with col1:
-    img_tag_1 = f'<img src="data:image/png;base64,{terrace_b64}" class="card-image">' if terrace_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;">:material/construction:</div>'
+    img_tag_1 = f'<img src="data:image/png;base64,{terrace_b64}" class="card-image">' if terrace_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;"><span class="material-symbols-outlined" style="vertical-align: bottom;">construction</span></div>'
     
     st.markdown(f"""
     <div class="action-card">
         {img_tag_1}
-        <div class="card-title">:material/deck: Расчёт Террас</div>
+        <div class="card-title"><span class="material-symbols-outlined" style="vertical-align: bottom;">deck</span> Расчёт Террас</div>
         <div class="card-desc">
             Визуальный расчёт прямых, угловых и П-образных террас.
             Калькуляция материалов, смета шурфов и лаг.
@@ -173,12 +174,12 @@ with col1:
         st.switch_page("pages/terrace_calculator.py")
 
 with col2:
-    img_tag_2 = f'<img src="data:image/png;base64,{fence_b64}" class="card-image">' if fence_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;">:material/shield:</div>'
+    img_tag_2 = f'<img src="data:image/png;base64,{fence_b64}" class="card-image">' if fence_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;"><span class="material-symbols-outlined" style="vertical-align: bottom;">shield</span></div>'
     
     st.markdown(f"""
     <div class="action-card">
         {img_tag_2}
-        <div class="card-title">:material/fence: Расчёт Заборов</div>
+        <div class="card-title"><span class="material-symbols-outlined" style="vertical-align: bottom;">fence</span> Расчёт Заборов</div>
         <div class="card-desc">
             Профлист, штакет, шахматка, жалюзи. Автоматический расчёт
             столбов, ворот, калиток и стоимости фундамента.
@@ -189,12 +190,12 @@ with col2:
         st.switch_page("pages/fence_calculator.py")
 
 with col3:
-    img_tag_3 = f'<img src="data:image/png;base64,{money_b64}" class="card-image">' if money_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;">:material/bar_chart:</div>'
+    img_tag_3 = f'<img src="data:image/png;base64,{money_b64}" class="card-image">' if money_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;"><span class="material-symbols-outlined" style="vertical-align: bottom;">bar_chart</span></div>'
     
     st.markdown(f"""
     <div class="action-card">
         {img_tag_3}
-        <div class="card-title">:material/request_quote: Прайс на работы</div>
+        <div class="card-title"><span class="material-symbols-outlined" style="vertical-align: bottom;">request_quote</span> Прайс на работы</div>
         <div class="card-desc">
             Актуальные расценки на строительные и монтажные работы по заборам.
         </div>
