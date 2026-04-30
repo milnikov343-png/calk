@@ -632,7 +632,7 @@ if is_complex:
                     with st.spinner("Анализирую чертеж и размеры... это займет 5-10 секунд"):
                         try:
                             genai.configure(api_key=api_key)
-                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            model = genai.GenerativeModel("gemini-3-flash")
                             img = Image.open(uploaded_img)
                             
                             prompt = '''
