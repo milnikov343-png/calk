@@ -1,6 +1,7 @@
 import streamlit as st
 import base64
 import os
+import datetime
 
 st.set_page_config(
     page_title="OOO Дача 2000 | Умный Калькулятор",
@@ -152,8 +153,78 @@ st.markdown("""
     <h1>ООО "Дача 2000"</h1>
     <p>Рабочая панель строительных калькуляторов</p>
 </div>
-<br>
 """, unsafe_allow_html=True)
+
+# --- Часы UTC+5 ---
+utc5 = datetime.timezone(datetime.timedelta(hours=5))
+now_utc5 = datetime.datetime.now(utc5)
+
+clock_text = now_utc5.strftime("%H:%M:%S")
+clock_date = now_utc5.strftime("%d.%m.%Y")
+clock_weekday_num = now_utc5.weekday()
+weekdays_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+clock_weekday = weekdays_ru[clock_weekday_num]
+
+clock_bg = "rgba(255,255,255,0.85)" if is_light else "rgba(17, 24, 39, 0.7)"
+clock_border = "rgba(16,185,129,0.4)" if is_light else "rgba(16,185,129,0.25)"
+clock_time_color = "#0f172a" if is_light else "#ffffff"
+clock_date_color = "#059669" if is_light else "#10b981"
+clock_label_color = "#64748b" if is_light else "#6b7280"
+
+st.markdown(f"""
+<div id="clock-container" style="
+    text-align: center;
+    margin: 0 auto 2rem auto;
+    max-width: 480px;
+    padding: 1.2rem 2rem;
+    background: {clock_bg};
+    border: 1px solid {clock_border};
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+">
+    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 3px; color: {clock_label_color}; margin-bottom: 0.3rem; font-weight: 600;">UTC+5</div>
+    <div id="live-time" style="
+        font-size: 3.5rem;
+        font-weight: 800;
+        color: {clock_time_color};
+        font-family: 'Inter', monospace;
+        line-height: 1.1;
+        letter-spacing: 2px;
+    ">{clock_text}</div>
+    <div id="live-date" style="
+        font-size: 1.1rem;
+        color: {clock_date_color};
+        font-weight: 500;
+        margin-top: 0.3rem;
+    ">{clock_weekday}, {clock_date}</div>
+</div>
+
+<script>
+(function() {{
+    const weekdays = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+    function updateClock() {{
+        const now = new Date();
+        const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+        const utc5 = new Date(utc + 5 * 3600000);
+        const h = String(utc5.getHours()).padStart(2, '0');
+        const m = String(utc5.getMinutes()).padStart(2, '0');
+        const s = String(utc5.getSeconds()).padStart(2, '0');
+        const d = String(utc5.getDate()).padStart(2, '0');
+        const mo = String(utc5.getMonth() + 1).padStart(2, '0');
+        const y = utc5.getFullYear();
+        const wd = weekdays[utc5.getDay()];
+        const timeEl = document.getElementById('live-time');
+        const dateEl = document.getElementById('live-date');
+        if (timeEl) timeEl.textContent = h + ':' + m + ':' + s;
+        if (dateEl) dateEl.textContent = wd + ', ' + d + '.' + mo + '.' + y;
+    }}
+    updateClock();
+    setInterval(updateClock, 1000);
+}})()
+</script>
+""", unsafe_allow_html=True)
+
 
 col1, col2, col3 = st.columns(3, gap="large")
 
