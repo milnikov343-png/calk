@@ -10,6 +10,7 @@ import pandas as pd
 import re
 from streamlit_drawable_canvas import st_canvas
 import json
+from PIL import Image as PILImage, ImageDraw
 
 try:
     import google.generativeai as genai
@@ -699,12 +700,39 @@ if is_complex:
             "left": 0, "top": 0, "fill": "rgba(165,214,167,0.3)", "stroke": "#2e7d32",
             "strokeWidth": 2, "path": path}]}
 
+    # --- Генерация фоновой сетки ---
+    grid_img = PILImage.new('RGB', (canvas_w, canvas_h), '#f8f8f8')
+    draw_grid = ImageDraw.Draw(grid_img)
+    # Тонкие линии сетки
+    for gx in range(0, canvas_w + 1, grid_px):
+        color = '#d0d0d0' if gx % (grid_px * 4) == 0 else '#e8e8e8'
+        width_line = 2 if gx % (grid_px * 4) == 0 else 1
+        draw_grid.line([(gx, 0), (gx, canvas_h)], fill=color, width=width_line)
+    for gy in range(0, canvas_h + 1, grid_px):
+        color = '#d0d0d0' if gy % (grid_px * 4) == 0 else '#e8e8e8'
+        width_line = 2 if gy % (grid_px * 4) == 0 else 1
+        draw_grid.line([(0, gy), (canvas_w, gy)], fill=color, width=width_line)
+    # Подписи метров на осях (каждые 4 клетки)
+    try:
+        from PIL import ImageFont
+        font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 10)
+    except:
+        font_small = ImageFont.load_default()
+    for gx in range(0, canvas_w + 1, grid_px * 4):
+        m_val = gx * mm_per_px / 1000
+        if m_val > 0:
+            draw_grid.text((gx + 2, 2), f"{m_val:.1f}м", fill='#999', font=font_small)
+    for gy in range(0, canvas_h + 1, grid_px * 4):
+        m_val = gy * mm_per_px / 1000
+        if m_val > 0:
+            draw_grid.text((2, gy + 2), f"{m_val:.1f}м", fill='#999', font=font_small)
+
     # --- Холст для рисования ---
     canvas_result = st_canvas(
         fill_color="rgba(165, 214, 167, 0.3)",
         stroke_width=2,
         stroke_color="#2e7d32",
-        background_color="#f8f8f8",
+        background_image=grid_img,
         drawing_mode=drawing_mode,
         point_display_radius=6,
         width=canvas_w,
@@ -765,9 +793,9 @@ if is_complex:
             area_mm2 -= vertices_mm[j][0] * vertices_mm[i][1]
         area_m2 = abs(area_mm2) / 2_000_000
 
-        # --- SVG чертёж с размерами ---
-        svg_w, svg_h = 650, 400
-        pad = 65
+        # --- SVG чертёж с размерами и углами ---
+        svg_w, svg_h = 650, 430
+        pad = 75
         sc_svg = min((svg_w - 2 * pad) / range_x, (svg_h - 2 * pad) / range_y)
         svg_pts = [(pad + (vx - min_x) * sc_svg, pad + (vy - min_y) * sc_svg) for vx, vy in vertices_mm]
         poly_str = " ".join([f"{p[0]:.1f},{p[1]:.1f}" for p in svg_pts])
@@ -778,11 +806,50 @@ if is_complex:
             mx_l, my_l = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
             nx_d, ny_d = -(p2[1] - p1[1]), p2[0] - p1[0]
             nd = max((nx_d ** 2 + ny_d ** 2) ** 0.5, 0.001)
-            off = 18
+            off = 20
+            # Длина стороны
+            side_m = sides_mm[i] / 1000
+            side_label = f"{sides_mm[i]} мм" if sides_mm[i] < 10000 else f"{side_m:.2f} м"
             labels += f'<text x="{mx_l + nx_d / nd * off:.1f}" y="{my_l + ny_d / nd * off:.1f}" '
-            labels += f'text-anchor="middle" font-size="12" fill="#1b5e20" font-weight="bold">{sides_mm[i]} мм</text>'
+            labels += f'text-anchor="middle" font-size="12" fill="#1b5e20" font-weight="bold">{side_label}</text>'
+            # Вершина
             labels += f'<circle cx="{p1[0]:.1f}" cy="{p1[1]:.1f}" r="5" fill="#2e7d32" stroke="white" stroke-width="1.5"/>'
-            labels += f'<text x="{p1[0]:.1f}" y="{p1[1] - 10:.1f}" text-anchor="middle" font-size="10" fill="#444" font-weight="bold">{i + 1}</text>'
+            labels += f'<text x="{p1[0]:.1f}" y="{p1[1] - 12:.1f}" text-anchor="middle" font-size="10" fill="#444" font-weight="bold">{i + 1}</text>'
+
+        # --- Углы в вершинах ---
+        angle_labels = ""
+        for i in range(n):
+            p_prev = vertices_mm[(i - 1) % n]
+            p_curr = vertices_mm[i]
+            p_next = vertices_mm[(i + 1) % n]
+            # Векторы
+            v1x, v1y = p_prev[0] - p_curr[0], p_prev[1] - p_curr[1]
+            v2x, v2y = p_next[0] - p_curr[0], p_next[1] - p_curr[1]
+            dot = v1x * v2x + v1y * v2y
+            mag1 = math.sqrt(v1x**2 + v1y**2)
+            mag2 = math.sqrt(v2x**2 + v2y**2)
+            if mag1 > 0 and mag2 > 0:
+                cos_a = max(-1, min(1, dot / (mag1 * mag2)))
+                angle_deg = round(math.degrees(math.acos(cos_a)))
+                # Позиция на SVG
+                sp = svg_pts[i]
+                # Смещение внутрь угла
+                bisect_x = (v1x / mag1 + v2x / mag2)
+                bisect_y = (v1y / mag1 + v2y / mag2)
+                bisect_mag = math.sqrt(bisect_x**2 + bisect_y**2)
+                if bisect_mag > 0.001:
+                    bx = bisect_x / bisect_mag * 28
+                    by = bisect_y / bisect_mag * 28
+                else:
+                    bx, by = 0, -28
+                # Цвет: зелёный для 90°, серый для остальных
+                a_color = '#00c853' if angle_deg == 90 else '#ff6f00' if angle_deg in (45, 135, 180) else '#666'
+                a_bg = '#e8f5e9' if angle_deg == 90 else '#fff3e0' if angle_deg in (45, 135, 180) else '#f5f5f5'
+                # Дуга угла (arc)
+                arc_r = 15
+                angle_labels += f'<circle cx="{sp[0]:.1f}" cy="{sp[1]:.1f}" r="{arc_r}" fill="{a_bg}" fill-opacity="0.7" stroke="{a_color}" stroke-width="1.5" stroke-dasharray="3,2"/>'
+                angle_labels += f'<text x="{sp[0] + bx * 0.7:.1f}" y="{sp[1] + by * 0.7 + 4:.1f}" '
+                angle_labels += f'text-anchor="middle" font-size="10" fill="{a_color}" font-weight="bold">{angle_deg}°</text>'
 
         svg_code = f'''<svg width="{svg_w}" height="{svg_h}" xmlns="http://www.w3.org/2000/svg">
             <defs><pattern id="g2" width="20" height="20" patternUnits="userSpaceOnUse">
@@ -790,12 +857,13 @@ if is_complex:
             <rect width="100%" height="100%" fill="url(#g2)" rx="8"/>
             <polygon points="{poly_str}" fill="#a5d6a7" fill-opacity="0.35" stroke="#2e7d32" stroke-width="2.5" stroke-linejoin="round"/>
             {labels}
+            {angle_labels}
             <text x="{svg_w / 2}" y="{svg_h - 12}" text-anchor="middle" font-size="13" fill="#555">
                 Площадь: {area_m2:.2f} м² | Габариты: {range_x} × {range_y} мм | Вершин: {n}
             </text>
         </svg>'''
 
-        st.markdown("### :material/straighten: Чертёж с размерами")
+        st.markdown("### :material/straighten: Чертёж с размерами и углами")
         st.markdown(svg_code, unsafe_allow_html=True)
 
         with st.expander(":material/list_alt: Таблица сторон", expanded=False):
