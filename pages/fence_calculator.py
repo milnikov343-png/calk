@@ -1436,6 +1436,7 @@ input_label = "#475569 !important" if is_light else "#b0bec5 !important"
 tab_text = "#64748b !important" if is_light else "#8899aa !important"
 tab_active = "#059669 !important" if is_light else "#00b894 !important"
 expander_text = "#059669" if is_light else "#00b894"
+border_color = "rgba(0, 0, 0, 0.15)" if is_light else "rgba(255, 255, 255, 0.12)"
 
 st.markdown(f"""
 <style>
@@ -1689,7 +1690,7 @@ with st.expander(":material/settings: ПАРАМЕТРЫ ЗАБОРА (Нажм�
                     st.markdown("**Материал для стороны:**")
                     s_mat_type = st.radio(f"Тип:", ["Профнастил", "Штакет", "Шахматка", "Жалюзи", "Юнис", "Локо", "Ранчо"], horizontal=True, key=f"s_mat_type_{i}", label_visibility="collapsed")
                     s_jalousie_step = 84
-                    if material_type == "Профнастил":
+                    if s_mat_type == "Профнастил":
                         s_mat_name = st.selectbox(f"Профлист:", list(proflist.keys()), key=f"s_mat_name_{i}")
                         s_gap = 0.0
                     elif s_mat_type == "Жалюзи":
