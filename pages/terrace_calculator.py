@@ -856,8 +856,11 @@ if is_complex:
     M = main_board['length_m']
     name = main_board['name']
 
-    flat_pieces = [p for row in layout_matrix for p in row]
-    board_totals = optimize_waste(flat_pieces, main_board)
+    # Разделяем рядовую и торцевую доску
+    main_pieces = [p for row in layout_matrix for p in row]
+    board_main_totals = optimize_waste(main_pieces, main_board) if main_pieces else {}
+    # Для нестандартных террас торцевая доска не применяется (нет окантовки)
+    board_edge_totals = {}
 
     # Лаги
     extra_joists = len(best_joints) * 2
@@ -915,13 +918,18 @@ if is_complex:
     work_supports = supports_count * 200 # Монтаж опор
 
     # Сметы
-    mat_data = [{"Позиция": f"Доска террасная: {nm}", "Кол-во": f"{dt['qty']} шт", "Сумма": dt['sum']} for nm, dt in board_totals.items()]
+    mat_data = []
+    for nm, dt in board_main_totals.items():
+        mat_data.append({"Позиция": f"Доска рядовая: {nm}", "Кол-во": f"{dt['qty']} шт", "Сумма": dt['sum']})
+    for nm, dt in board_edge_totals.items():
+        mat_data.append({"Позиция": f"Доска торцевая: {nm}", "Кол-во": f"{dt['qty']} шт", "Сумма": dt['sum']})
     mat_data.extend([
         {"Позиция": f"Лага {joist_choice}", "Кол-во": f"{j_m} м.п.", "Сумма": j_total},
         {"Позиция": "Кляймеры (уп. 100 шт)", "Кол-во": f"{clips_packs} уп.", "Сумма": clips_total},
     ])
     if f_total > 0:
-        mat_data.insert(len(board_totals), {"Позиция": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
+        board_lines = len(board_main_totals) + len(board_edge_totals)
+        mat_data.insert(board_lines, {"Позиция": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
         
     if supports_count > 0:
         mat_data.append({"Позиция": f"Регулируемые опоры HILST LIFT (под {joist_support_type})", "Кол-во": f"{supports_count} шт.", "Сумма": supports_total})
@@ -1163,8 +1171,10 @@ if use_frame:
 
     edge_pieces = front_pieces + back_pieces + left_pieces + right_pieces
 
-flat_pieces = [p for row in layout_matrix for p in row] + edge_pieces
-board_totals = optimize_waste(flat_pieces, main_board)
+# Разделяем рядовую и торцевую доску
+main_pieces = [p for row in layout_matrix for p in row]
+board_main_totals = optimize_waste(main_pieces, main_board) if main_pieces else {}
+board_edge_totals = optimize_waste(edge_pieces, main_board) if edge_pieces else {}
 
 # Расчет подсистемы
 extra_joists = len(best_joints) * 2 
@@ -1196,10 +1206,15 @@ clips_total = clips_packs * 2200
 work_base = area * 2400; work_steps = steps_m * 5200; work_piles = piles * 3600
 work_supports = supports_count * 200
 
-# Таблицы
-mat_data = [{"Позиция": f"Доска террасная/торцевая: {name}", "Кол-во": f"{data['qty']} шт", "Сумма": data['sum']} for name, data in board_totals.items()]
+# Таблицы — раздельные строки для рядовой и торцевой доски
+mat_data = []
+for nm, dt in board_main_totals.items():
+    mat_data.append({"Позиция": f"Доска рядовая: {nm}", "Кол-во": f"{dt['qty']} шт", "Сумма": dt['sum']})
+for nm, dt in board_edge_totals.items():
+    mat_data.append({"Позиция": f"Доска торцевая: {nm}", "Кол-во": f"{dt['qty']} шт", "Сумма": dt['sum']})
+board_lines = len(board_main_totals) + len(board_edge_totals)
 mat_data.extend([{"Позиция": f"Лага {joist_choice} (вкл. парные лаги на стыках)", "Кол-во": f"{j_m} м.п.", "Сумма": j_total}, {"Позиция": "Кляймеры (уп. 100 шт)", "Кол-во": f"{clips_packs} уп.", "Сумма": clips_total}])
-if frame_choice and "Грунт" in base_type: mat_data.insert(len(board_totals), {"Позиция": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
+if frame_choice and "Грунт" in base_type: mat_data.insert(board_lines, {"Позиция": f"Каркас {frame_choice}", "Кол-во": f"{f_m} м.п.", "Сумма": f_total})
 if supports_count > 0: mat_data.append({"Позиция": f"Регулируемые опоры HILST LIFT (под {joist_support_type})", "Кол-во": f"{supports_count} шт.", "Сумма": supports_total})
 
 work_data = [{"Позиция": "Монтаж настила", "Сумма": work_base}]
