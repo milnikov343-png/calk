@@ -1596,6 +1596,38 @@ div[data-testid="stExpander"] details summary span {{
 div[data-testid="stExpander"] details summary svg {{
     fill: {expander_text} !important;
 }}
+
+/* ====== КНОПКИ — КОНТРАСТ ====== */
+button[data-testid="stBaseButton-primary"] {{
+    background: #00b894 !important;
+    color: #fff !important;
+    border: none !important;
+    font-weight: 700 !important;
+    border-radius: 10px !important;
+    transition: all 0.2s ease !important;
+}}
+button[data-testid="stBaseButton-primary"]:hover {{
+    background: #00a884 !important;
+    box-shadow: 0 4px 15px rgba(0, 184, 148, 0.4) !important;
+}}
+button[data-testid="stBaseButton-primary"] p {{
+    color: #fff !important;
+}}
+button[data-testid="stBaseButton-secondary"] {{
+    background: {"rgba(255,255,255,0.9)" if is_light else "rgba(255,255,255,0.08)"} !important;
+    color: {"#1e293b" if is_light else "#e2e8f0"} !important;
+    border: {"1.5px solid #cbd5e1" if is_light else "1.5px solid rgba(255,255,255,0.2)"} !important;
+    font-weight: 600 !important;
+    border-radius: 10px !important;
+}}
+button[data-testid="stBaseButton-secondary"]:hover {{
+    background: {"rgba(0,184,148,0.08)" if is_light else "rgba(0,184,148,0.15)"} !important;
+    border-color: #00b894 !important;
+}}
+button[data-testid="stBaseButton-secondary"] p {{
+    color: {"#1e293b" if is_light else "#e2e8f0"} !important;
+}}
+
 </style>
 """, unsafe_allow_html=True)
 
