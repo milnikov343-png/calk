@@ -316,6 +316,7 @@ expander_text = "#059669" if is_light else "#00b894"
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
 /* Скрываем сайдбар */
 [data-testid="collapsedControl"] {{ display: none; }}
@@ -484,7 +485,7 @@ with st.container():
         st.markdown(f"""
         <div>
             <h2 style='margin:0; padding-top:8px; font-weight:800; color: {header_text};'>
-                :material/construction: Умный Калькулятор Террас
+                🏗️ Умный Калькулятор Террас
             </h2>
             <span style='color: #00b894; font-size: 0.9rem;'>ООО "Дача 2000" — Профессиональный расчёт стоимости</span>
         </div>
@@ -534,13 +535,13 @@ st.markdown(progress_html, unsafe_allow_html=True)
 # STEP 1: ФОРМА ТЕРРАСЫ
 # ============================================================
 if current_step == 1:
-    st.markdown("### :material/view_quilt: Выберите форму террасы")
+    st.markdown("### Выберите форму террасы")
     shapes = [
-        ("rect", "rectangle", "Простая", "Прямоугольная стандартная терраса"),
-        ("l_shape", "architecture", "Г-образная", "Угловая конфигурация"),
-        ("u_shape", "crop_din", "П-образная", "С внутренним вырезом"),
-        ("circle", "circle", "Круглая", "Овал или круг"),
-        ("custom", "draw", "Своя форма", "Нарисуйте или загрузите чертёж"),
+        ("rect", "▬", "Простая", "Прямоугольная стандартная терраса"),
+        ("l_shape", "⌐", "Г-образная", "Угловая конфигурация"),
+        ("u_shape", "⊓", "П-образная", "С внутренним вырезом"),
+        ("circle", "◯", "Круглая", "Овал или круг"),
+        ("custom", "✏", "Своя форма", "Нарисуйте или загрузите чертёж"),
     ]
     cols = st.columns(5, gap="medium")
     for i, (key, icon, title, desc) in enumerate(shapes):
@@ -549,7 +550,7 @@ if current_step == 1:
             brd = "2px solid #00b894" if sel else f"1px solid {card_border}"
             bg = "rgba(0,184,148,0.08)" if sel else card_bg
             st.markdown(f"""<div style="background:{bg};border:{brd};border-radius:16px;padding:1.5rem 1rem;text-align:center;min-height:180px;transition:all 0.3s ease;cursor:pointer;">
-                <span class="material-symbols-outlined" style="font-size:48px;color:#00b894;">{icon}</span>
+                <div style="font-size:52px;line-height:1;color:#00b894;">{icon}</div>
                 <div style="font-weight:700;font-size:1.1rem;margin:0.8rem 0 0.5rem 0;color:{'#0f172a' if is_light else '#fff'};">{title}</div>
                 <div style="font-size:0.8rem;color:{'#64748b' if is_light else '#94a3b8'};">{desc}</div>
             </div>""", unsafe_allow_html=True)
@@ -804,7 +805,7 @@ elif current_step == 2:
                 side_data = [{"Сторона": f"{i+1} → {(i+1)%n+1}", "Длина (мм)": sides_mm[i], "Вершина": f"({vertices_mm[i][0]}, {vertices_mm[i][1]})"} for i in range(n)]
                 st.dataframe(pd.DataFrame(side_data), use_container_width=True, hide_index=True)
         else:
-            st.markdown("<div style='text-align:center; padding:1rem; color:#888; font-size:1.1rem;'>:material/touch_app: Нарисуйте контур террасы на холсте выше</div>", unsafe_allow_html=True)
+            st.info("✏️ Нарисуйте контур террасы на холсте выше")
 
     # Бассейн
     st.markdown("---")
