@@ -34,122 +34,17 @@ with col_toggle:
     theme_choice = st.radio("Тема", [":material/dark_mode: Тёмная", ":material/light_mode: Светлая"], horizontal=True, label_visibility="collapsed")
     st.session_state.theme = 'light' if "Светлая" in theme_choice else 'dark'
 
-is_light = st.session_state.theme == 'light'
+from theme import apply_theme
+theme = apply_theme()
 
-# Переменные для CSS
-bg_app = "#f4f4f4" if is_light else "#191919"
-text_main = "#191919" if is_light else "#ffffff"
-h1_color = "#191919" if is_light else "#ffffff"
-h1_shadow = "none"
-p_color = "#9fcb3d"
-card_bg = "#ffffff" if is_light else "#252525"
-card_border = "#e0e0e0" if is_light else "#333333"
-card_shadow = "0 4px 10px rgba(0,0,0,0.05)" if is_light else "0 4px 15px rgba(0,0,0,0.2)"
-card_hover_bg = "#ffffff" if is_light else "#2a2a2a"
-card_hover_shadow = "0 10px 20px rgba(159, 203, 61, 0.2)" if is_light else "0 10px 25px rgba(159, 203, 61, 0.15)"
-card_title = "#191919" if is_light else "#ffffff"
-card_desc = "#666666" if is_light else "#a0a0a0"
-dummy_img_bg = "#e0e0e0" if is_light else "#333333"
-
-# --- Эстетика стартовой страницы ---
-st.markdown(f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0');
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
-
-html, body, [class*="css"] {{
-    font-family: 'Inter', sans-serif;
-}}
-
-/* Фон страницы */
-.stApp {{
-    background: {bg_app};
-    color: {text_main};
-}}
-
-/* Заголовок-шапка */
-.header-bar {{
-    text-align: center;
-    padding: 0rem 0 2rem 0;
-}}
-.header-bar h1 {{
-    color: {h1_color};
-    font-weight: 800;
-    font-size: 2.8rem;
-    margin-bottom: 0.5rem;
-    text-shadow: {h1_shadow};
-}}
-.header-bar p {{
-    color: {p_color};
-    font-size: 1.2rem;
-    font-weight: 400;
-}}
-
-/* Контейнеры колонок */
-div[data-testid="column"] {{
-    display: flex;
-    flex-direction: column;
-}}
-
-/* Карточки действий */
-.action-card {{
-    background: {card_bg};
-    border: 1px solid {card_border};
-    border-radius: 16px;
-    padding: 1.5rem;
-    text-align: center;
-    transition: all 0.3s ease;
-    box-shadow: {card_shadow};
-    margin-bottom: 1rem;
-    backdrop-filter: blur(10px);
-    
-    /* Flexbox для одинаковой высоты */
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    height: 100%;
-}}
-.action-card:hover {{
-    transform: translateY(-5px);
-    border-color: #9fcb3d;
-    box-shadow: {card_hover_shadow};
-    background: {card_hover_bg};
-}}
-.card-image {{
-    width: 100%;
-    height: 220px;
-    object-fit: cover;
-    border-radius: 12px;
-    margin-bottom: 1.2rem;
-    border: 1px solid rgba(255,255,255,0.05);
-}}
-.card-title {{
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: {card_title};
-    margin-bottom: 1rem;
-}}
-.card-desc {{
-    color: {card_desc};
-    font-size: 0.95rem;
-    line-height: 1.5;
-    margin-bottom: 1.5rem;
-    flex-grow: 1; /* Описание занимает всё свободное место, выравнивая низ */
-}}
-
-/* Скрываем боковую панель на главной */
-[data-testid="collapsedControl"] {{
-    display: none;
-}}
-section[data-testid="stSidebar"] {{ 
-    display: none !important; 
-}}
-</style>
-""", unsafe_allow_html=True)
+is_light = theme["is_light"]
+card_bg = theme["card_bg"]
+card_border = theme["card_border"]
+dummy_img_bg = theme["dummy_img_bg"]
 
 # --- Логотип и заголовок ---
 st.markdown("""
-<div class="header-bar">
+<div class="header-bar-main">
     <h1>ООО "Дача 2000"</h1>
     <p>Рабочая панель строительных калькуляторов</p>
 </div>
