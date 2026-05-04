@@ -268,9 +268,9 @@ def apply_theme():
     }}
 
     /* Исправление цвета текста в выпадающих списках (selectbox) */
-    div[data-baseweb="select"] * {{ color: #000000 !important; }}
-    div[data-baseweb="popover"] * {{ color: #000000 !important; }}
-    li[role="option"] * {{ color: #000000 !important; }}
+    div[data-baseweb="select"] * {{ color: {text_main} !important; }}
+    div[data-baseweb="popover"] * {{ color: {text_main} !important; }}
+    li[role="option"] * {{ color: {text_main} !important; }}
 
     /* ====== КНОПКИ — КОНТРАСТ ====== */
     button[data-testid="stBaseButton-primary"] {{

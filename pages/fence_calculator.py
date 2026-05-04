@@ -1708,36 +1708,36 @@ def render_grouped_table(items, categorize_func, total_sum, theme_text, theme_bo
     for cat, cat_items in groups.items():
         cat_display = re.sub(r':material/(\w+):', r'<span class="material-symbols-outlined" style="vertical-align: middle; margin-right: 5px; font-size: 1.2rem;">\1</span>', cat)
         html += f"""
-        <div style='background-color: {highlight_color}20; padding: 10px 15px; font-weight: bold; border-bottom: 1px solid {theme_border};'>
-            {cat_display}
-        </div>
-        <table style='width: 100%; border-collapse: collapse; text-align: left; margin: 0; font-size: 0.95rem;'>
-            <tr style='border-bottom: 1px solid {theme_border}; opacity: 0.7; font-size: 0.85rem;'>
-                <th style='padding: 8px 15px;'>Наименование</th>
-                <th style='padding: 8px 15px;'>Ед.</th>
-                <th style='padding: 8px 15px;'>Кол-во</th>
-                <th style='padding: 8px 15px;'>Цена</th>
-                <th style='padding: 8px 15px; text-align: right;'>Сумма</th>
-            </tr>
-        """
+<div style='background-color: {highlight_color}20; padding: 10px 15px; font-weight: bold; border-bottom: 1px solid {theme_border};'>
+    {cat_display}
+</div>
+<table style='width: 100%; border-collapse: collapse; text-align: left; margin: 0; font-size: 0.95rem;'>
+    <tr style='border-bottom: 1px solid {theme_border}; opacity: 0.7; font-size: 0.85rem;'>
+        <th style='padding: 8px 15px;'>Наименование</th>
+        <th style='padding: 8px 15px;'>Ед.</th>
+        <th style='padding: 8px 15px;'>Кол-во</th>
+        <th style='padding: 8px 15px;'>Цена</th>
+        <th style='padding: 8px 15px; text-align: right;'>Сумма</th>
+    </tr>
+"""
         for it in cat_items:
             html += f"""
-            <tr style='border-bottom: 1px solid {theme_border};'>
-                <td style='padding: 10px 15px;'>{it['name']}</td>
-                <td style='padding: 10px 15px;'>{it.get('unit','')}</td>
-                <td style='padding: 10px 15px;'>{it.get('qty','')}</td>
-                <td style='padding: 10px 15px;'>{it.get('price',0):,.0f} ₽</td>
-                <td style='padding: 10px 15px; text-align: right; font-weight: bold;'>{it['total']:,.0f} ₽</td>
-            </tr>
-            """
-        html += "</table>"
+    <tr style='border-bottom: 1px solid {theme_border};'>
+        <td style='padding: 10px 15px;'>{it['name']}</td>
+        <td style='padding: 10px 15px;'>{it.get('unit','')}</td>
+        <td style='padding: 10px 15px;'>{it.get('qty','')}</td>
+        <td style='padding: 10px 15px;'>{it.get('price',0):,.0f} ₽</td>
+        <td style='padding: 10px 15px; text-align: right; font-weight: bold;'>{it['total']:,.0f} ₽</td>
+    </tr>
+"""
+        html += "</table>\n"
     
     html += f"""
-    <div style='padding: 15px; text-align: right; font-size: 1.2rem; font-weight: bold; background-color: {highlight_color}10;'>
-        ИТОГО: <span style='color: {highlight_color};'>{total_sum:,.0f} ₽</span>
-    </div>
-    </div>
-    """
+<div style='padding: 15px; text-align: right; font-size: 1.2rem; font-weight: bold; background-color: {highlight_color}10;'>
+    ИТОГО: <span style='color: {highlight_color};'>{total_sum:,.0f} ₽</span>
+</div>
+</div>
+"""
     return html
 
 with tab_works:

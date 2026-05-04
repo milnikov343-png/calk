@@ -121,7 +121,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-col1, col2, col3 = st.columns(3, gap="large")
+col1, col2, col3, col4 = st.columns(4, gap="large")
 
 with col1:
     img_tag_1 = f'<img src="data:image/png;base64,{terrace_b64}" class="card-image">' if terrace_b64 else f'<div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;"><span class="material-symbols-outlined" style="vertical-align: bottom;">construction</span></div>'
@@ -169,5 +169,18 @@ with col3:
     """, unsafe_allow_html=True)
     if st.button("Открыть Прайс на работы по забору", use_container_width=True, type="primary"):
         st.switch_page("pages/fence_prices.py")
+
+with col4:
+    st.markdown(f"""
+    <div class="action-card">
+        <div class="card-image" style="background:{dummy_img_bg}; display:flex; align-items:center; justify-content:center; font-size:3rem;"><span class="material-symbols-outlined" style="vertical-align: bottom;">settings</span></div>
+        <div class="card-title"><span class="material-symbols-outlined" style="vertical-align: bottom;">settings</span> Управление ценами</div>
+        <div class="card-desc">
+            Панель администратора. Задание цен на материалы и работы, обновление прайс-листов.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Открыть Управление ценами", use_container_width=True, type="primary"):
+        st.switch_page("pages/admin_prices.py")
 
 st.markdown("<br><hr style='opacity: 0.1; border-color: #a0a0a0;'><div style='text-align: center; color: #a0a0a0; font-size: 0.8rem;'>Внутренняя система Дача 2000 | Версия 2.0</div>", unsafe_allow_html=True)
