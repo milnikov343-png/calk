@@ -296,22 +296,22 @@ st.set_page_config(page_title="Дача 2000 | Умный Калькулятор
 # --- Тема оформления ---
 is_light = st.session_state.get('theme', 'dark') == 'light'
 
-bg_app = "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)" if is_light else "linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 40%, #16213e 100%)"
-text_color = "#1e293b !important" if is_light else "#f8f9fa !important"
-header_bg = "linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.95))" if is_light else "linear-gradient(135deg, rgba(30, 60, 90, 0.95), rgba(20, 40, 70, 0.95))"
-header_text = "#0f172a" if is_light else "#e0e0e0"
-card_bg = "linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(241, 245, 249, 0.95))" if is_light else "linear-gradient(135deg, rgba(30, 50, 80, 0.8), rgba(20, 35, 60, 0.9))"
-card_border = "rgba(16, 185, 129, 0.3)" if is_light else "rgba(0, 184, 148, 0.3)"
-card_shadow = "0 4px 10px rgba(0,0,0,0.05)" if is_light else "0 4px 20px rgba(0, 0, 0, 0.3)"
-card_hover_shadow = "0 8px 20px rgba(16, 185, 129, 0.15)" if is_light else "0 8px 30px rgba(0, 184, 148, 0.2)"
-panel_bg = "rgba(255, 255, 255, 0.7)" if is_light else "rgba(25, 40, 65, 0.6)"
-panel_border = "rgba(0, 0, 0, 0.1)" if is_light else "rgba(255, 255, 255, 0.08)"
-label_color = "#64748b" if is_light else "#8899aa"
-metric_val = "linear-gradient(135deg, #059669, #10b981)" if is_light else "linear-gradient(135deg, #00b894, #00cec9)"
-input_label = "#475569 !important" if is_light else "#b0bec5 !important"
-tab_text = "#64748b !important" if is_light else "#8899aa !important"
-tab_active = "#059669 !important" if is_light else "#00b894 !important"
-expander_text = "#059669" if is_light else "#00b894"
+bg_app = "#f4f4f4" if is_light else "#191919"
+text_color = "#191919 !important" if is_light else "#ffffff !important"
+header_bg = "#ffffff" if is_light else "#252525"
+header_text = "#191919" if is_light else "#ffffff"
+card_bg = "#ffffff" if is_light else "#252525"
+card_border = "#e0e0e0" if is_light else "#333333"
+card_shadow = "0 4px 10px rgba(0,0,0,0.05)" if is_light else "0 4px 15px rgba(0,0,0,0.2)"
+card_hover_shadow = "0 10px 20px rgba(159, 203, 61, 0.2)" if is_light else "0 10px 25px rgba(159, 203, 61, 0.15)"
+panel_bg = "#ffffff" if is_light else "#252525"
+panel_border = "#e0e0e0" if is_light else "#333333"
+label_color = "#666666" if is_light else "#a0a0a0"
+metric_val = "linear-gradient(135deg, #8eb735, #9fcb3d)"
+input_label = "#666666 !important" if is_light else "#a0a0a0 !important"
+tab_text = "#666666 !important" if is_light else "#a0a0a0 !important"
+tab_active = "#9fcb3d !important"
+expander_text = "#9fcb3d"
 
 st.markdown(f"""
 <style>
@@ -342,10 +342,10 @@ li[role="option"] * {{ color: #000000 !important; }}
 .header-bar {{
     background: {header_bg};
     backdrop-filter: blur(12px);
-    border-bottom: 2px solid #00b894;
+    border-bottom: 2px solid #9fcb3d;
     padding: 0.7rem 1.5rem;
     border-radius: 0 0 16px 16px;
-    box-shadow: 0 4px 20px rgba(0, 184, 148, 0.15);
+    box-shadow: 0 4px 20px rgba(159, 203, 61, 0.15);
     margin-bottom: 1rem;
     display: flex;
     align-items: center;
@@ -358,7 +358,7 @@ li[role="option"] * {{ color: #000000 !important; }}
     font-size: 1.4rem;
 }}
 .header-bar span {{
-    color: #00b894;
+    color: #9fcb3d;
     font-weight: 300;
     font-size: 1rem;
 }}
@@ -375,7 +375,7 @@ li[role="option"] * {{ color: #000000 !important; }}
 }}
 .metric-card:hover {{
     transform: translateY(-3px);
-    border-color: rgba(0, 184, 148, 0.6);
+    border-color: rgba(159, 203, 61, 0.6);
     box-shadow: {card_hover_shadow};
 }}
 .metric-card .label {{
@@ -420,7 +420,7 @@ li[role="option"] * {{ color: #000000 !important; }}
     backdrop-filter: blur(8px);
 }}
 .panel h4 {{
-    color: #00b894;
+    color: #9fcb3d;
     margin-top: 0;
     margin-bottom: 0.8rem;
     font-weight: 700;
@@ -475,20 +475,20 @@ div[data-testid="stExpander"] details summary svg {{
 /* ====== КНОПКИ — КОНТРАСТ ====== */
 /* Основная (primary) */
 button[data-testid="stBaseButton-primary"] {{
-    background: #00b894 !important;
-    color: #fff !important;
+    background: #9fcb3d !important;
+    color: #191919 !important;
     border: none !important;
     font-weight: 700 !important;
     border-radius: 10px !important;
     transition: all 0.2s ease !important;
 }}
 button[data-testid="stBaseButton-primary"]:hover {{
-    background: #00a884 !important;
-    box-shadow: 0 4px 15px rgba(0, 184, 148, 0.4) !important;
+    background: #8eb735 !important;
+    box-shadow: 0 4px 15px rgba(159, 203, 61, 0.4) !important;
     transform: translateY(-1px) !important;
 }}
 button[data-testid="stBaseButton-primary"] p {{
-    color: #fff !important;
+    color: #191919 !important;
 }}
 
 /* Вторичная (secondary) — FIX контраста */
@@ -501,9 +501,9 @@ button[data-testid="stBaseButton-secondary"] {{
     transition: all 0.2s ease !important;
 }}
 button[data-testid="stBaseButton-secondary"]:hover {{
-    background: {"rgba(0,184,148,0.08)" if is_light else "rgba(0,184,148,0.15)"} !important;
-    border-color: #00b894 !important;
-    color: {"#0f172a" if is_light else "#fff"} !important;
+    background: {"rgba(159,203,61,0.08)" if is_light else "rgba(159,203,61,0.15)"} !important;
+    border-color: #9fcb3d !important;
+    color: {"#191919" if is_light else "#fff"} !important;
 }}
 button[data-testid="stBaseButton-secondary"] p {{
     color: {"#1e293b" if is_light else "#e2e8f0"} !important;
@@ -530,14 +530,14 @@ with st.container():
         try:
             st.image("logo.png", width=160)
         except:
-            st.markdown("<h3 style='color:#00b894; margin:0;'>Дача 2000</h3>", unsafe_allow_html=True)
+            st.markdown("<h3 style='color:#9fcb3d; margin:0;'>Дача 2000</h3>", unsafe_allow_html=True)
     with col_title:
         st.markdown(f"""
         <div>
             <h2 style='margin:0; padding-top:8px; font-weight:800; color: {header_text};'>
                 🏗️ Умный Калькулятор Террас
             </h2>
-            <span style='color: #00b894; font-size: 0.9rem;'>ООО "Дача 2000" — Профессиональный расчёт стоимости</span>
+            <span style='color: #9fcb3d; font-size: 0.9rem;'>ООО "Дача 2000" — Профессиональный расчёт стоимости</span>
         </div>
         """, unsafe_allow_html=True)
     with col_btn:
@@ -564,19 +564,19 @@ for i, label in enumerate(step_labels, 1):
     is_active = i == current_step
     is_done = i < current_step
     if is_done:
-        color, bg, border = "#fff", "#00b894", "#00b894"
+        color, bg, border = "#191919", "#9fcb3d", "#9fcb3d"
         circle = f'<div style="width:32px;height:32px;border-radius:50%;background:{bg};color:{color};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;border:2px solid {border};">✓</div>'
     elif is_active:
-        color, bg, border = "#fff", "#00b894", "#00b894"
-        circle = f'<div style="width:32px;height:32px;border-radius:50%;background:{bg};color:{color};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;border:2px solid {border};box-shadow:0 0 12px rgba(0,184,148,0.5);">{i}</div>'
+        color, bg, border = "#191919", "#9fcb3d", "#9fcb3d"
+        circle = f'<div style="width:32px;height:32px;border-radius:50%;background:{bg};color:{color};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;border:2px solid {border};box-shadow:0 0 12px rgba(159,203,61,0.5);">{i}</div>'
     else:
-        lc = "#64748b" if is_light else "#6b7280"
+        lc = "#666666" if is_light else "#a0a0a0"
         circle = f'<div style="width:32px;height:32px;border-radius:50%;background:transparent;color:{lc};display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;border:2px solid {lc};">{i}</div>'
-    lbl_color = "#00b894" if (is_active or is_done) else ("#64748b" if is_light else "#6b7280")
+    lbl_color = "#9fcb3d" if (is_active or is_done) else ("#666666" if is_light else "#a0a0a0")
     lbl_weight = "700" if is_active else "500"
     progress_html += f'<div style="display:flex;flex-direction:column;align-items:center;flex:0 0 auto;">{circle}<div style="font-size:11px;margin-top:4px;color:{lbl_color};font-weight:{lbl_weight};">{label}</div></div>'
     if i < 5:
-        line_color = "#00b894" if is_done else ("#d0d0d0" if is_light else "#333")
+        line_color = "#9fcb3d" if is_done else ("#e0e0e0" if is_light else "#333333")
         progress_html += f'<div style="flex:1;height:3px;background:{line_color};margin:0 4px;border-radius:2px;align-self:flex-start;margin-top:15px;"></div>'
 progress_html += '</div>'
 st.markdown(progress_html, unsafe_allow_html=True)
@@ -597,12 +597,12 @@ if current_step == 1:
     for i, (key, icon, title, desc) in enumerate(shapes):
         with cols[i]:
             sel = st.session_state.get('ts_shape', 'rect') == key
-            brd = "2px solid #00b894" if sel else f"1px solid {card_border}"
-            bg = "rgba(0,184,148,0.08)" if sel else card_bg
+            brd = "2px solid #9fcb3d" if sel else f"1px solid {card_border}"
+            bg = "rgba(159,203,61,0.08)" if sel else card_bg
             st.markdown(f"""<div style="background:{bg};border:{brd};border-radius:16px;padding:1.5rem 1rem;text-align:center;min-height:180px;transition:all 0.3s ease;cursor:pointer;">
-                <div style="font-size:52px;line-height:1;color:#00b894;">{icon}</div>
-                <div style="font-weight:700;font-size:1.1rem;margin:0.8rem 0 0.5rem 0;color:{'#0f172a' if is_light else '#fff'};">{title}</div>
-                <div style="font-size:0.8rem;color:{'#64748b' if is_light else '#94a3b8'};">{desc}</div>
+                <div style="font-size:52px;line-height:1;color:#9fcb3d;">{icon}</div>
+                <div style="font-weight:700;font-size:1.1rem;margin:0.8rem 0 0.5rem 0;color:{'#191919' if is_light else '#fff'};">{title}</div>
+                <div style="font-size:0.8rem;color:{'#666666' if is_light else '#a0a0a0'};">{desc}</div>
             </div>""", unsafe_allow_html=True)
             if st.button(f"Выбрать", key=f"shape_{key}", use_container_width=True,
                          type="primary" if sel else "secondary"):
@@ -1392,7 +1392,7 @@ elif current_step == 5:
     # ВЫВОД РЕЗУЛЬТАТОВ (общий для обоих путей)
     # ============================================================
     # Крупная цена
-    st.markdown(f"""<div style="text-align:center;padding:2rem;margin:1rem 0;background:{card_bg};border:2px solid #00b894;border-radius:20px;box-shadow:0 8px 30px rgba(0,184,148,0.2);">
+    st.markdown(f"""<div style="text-align:center;padding:2rem;margin:1rem 0;background:{card_bg};border:2px solid #9fcb3d;border-radius:20px;box-shadow:0 8px 30px rgba(159,203,61,0.2);">
         <div style="font-size:0.9rem;color:{label_color};text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem;">Итоговая стоимость</div>
         <div style="font-size:3.5rem;font-weight:900;background:linear-gradient(135deg,#f59e0b,#ea580c,#dc2626);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.1;">{grand_total:,.0f} ₽</div>
         <div style="font-size:0.85rem;color:{label_color};margin-top:0.5rem;">Материалы + Работы</div>

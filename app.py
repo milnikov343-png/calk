@@ -37,19 +37,19 @@ with col_toggle:
 is_light = st.session_state.theme == 'light'
 
 # Переменные для CSS
-bg_app = "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)" if is_light else "linear-gradient(135deg, #0a0e17 0%, #111827 50%, #1f2937 100%)"
-text_main = "#1e293b" if is_light else "#e5e7eb"
-h1_color = "#0f172a" if is_light else "#ffffff"
-h1_shadow = "none" if is_light else "0 4px 15px rgba(0,0,0,0.4)"
-p_color = "#059669" if is_light else "#10b981"
-card_bg = "rgba(255, 255, 255, 0.9)" if is_light else "rgba(30, 41, 59, 0.7)"
-card_border = "rgba(16, 185, 129, 0.4)" if is_light else "rgba(16, 185, 129, 0.2)"
-card_shadow = "0 4px 10px rgba(0,0,0,0.05)" if is_light else "0 10px 25px rgba(0,0,0,0.3)"
-card_hover_bg = "#ffffff" if is_light else "rgba(30, 41, 59, 0.9)"
-card_hover_shadow = "0 10px 20px rgba(16, 185, 129, 0.15)" if is_light else "0 15px 35px rgba(16, 185, 129, 0.2)"
-card_title = "#0f172a" if is_light else "#ffffff"
-card_desc = "#475569" if is_light else "#94a3b8"
-dummy_img_bg = "#e2e8f0" if is_light else "#333"
+bg_app = "#f4f4f4" if is_light else "#191919"
+text_main = "#191919" if is_light else "#ffffff"
+h1_color = "#191919" if is_light else "#ffffff"
+h1_shadow = "none"
+p_color = "#9fcb3d"
+card_bg = "#ffffff" if is_light else "#252525"
+card_border = "#e0e0e0" if is_light else "#333333"
+card_shadow = "0 4px 10px rgba(0,0,0,0.05)" if is_light else "0 4px 15px rgba(0,0,0,0.2)"
+card_hover_bg = "#ffffff" if is_light else "#2a2a2a"
+card_hover_shadow = "0 10px 20px rgba(159, 203, 61, 0.2)" if is_light else "0 10px 25px rgba(159, 203, 61, 0.15)"
+card_title = "#191919" if is_light else "#ffffff"
+card_desc = "#666666" if is_light else "#a0a0a0"
+dummy_img_bg = "#e0e0e0" if is_light else "#333333"
 
 # --- Эстетика стартовой страницы ---
 st.markdown(f"""
@@ -111,7 +111,7 @@ div[data-testid="column"] {{
 }}
 .action-card:hover {{
     transform: translateY(-5px);
-    border-color: rgba(16, 185, 129, 0.6);
+    border-color: #9fcb3d;
     box-shadow: {card_hover_shadow};
     background: {card_hover_bg};
 }}
@@ -165,11 +165,11 @@ clock_weekday_num = now_utc5.weekday()
 weekdays_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 clock_weekday = weekdays_ru[clock_weekday_num]
 
-clock_bg = "rgba(255,255,255,0.85)" if is_light else "rgba(17, 24, 39, 0.7)"
-clock_border = "rgba(16,185,129,0.4)" if is_light else "rgba(16,185,129,0.25)"
-clock_time_color = "#0f172a" if is_light else "#ffffff"
-clock_date_color = "#059669" if is_light else "#10b981"
-clock_label_color = "#64748b" if is_light else "#6b7280"
+clock_bg = "#ffffff" if is_light else "#252525"
+clock_border = "#e0e0e0" if is_light else "#333333"
+clock_time_color = "#191919" if is_light else "#ffffff"
+clock_date_color = "#9fcb3d"
+clock_label_color = "#666666" if is_light else "#a0a0a0"
 
 st.markdown(f"""
 <div id="clock-container" style="
@@ -275,4 +275,4 @@ with col3:
     if st.button("Открыть Прайс на работы по забору", use_container_width=True, type="primary"):
         st.switch_page("pages/fence_prices.py")
 
-st.markdown("<br><hr style='opacity: 0.1;'><div style='text-align: center; color: #64748b; font-size: 0.8rem;'>Внутренняя система Дача 2000 | Версия 2.0</div>", unsafe_allow_html=True)
+st.markdown("<br><hr style='opacity: 0.1; border-color: #a0a0a0;'><div style='text-align: center; color: #a0a0a0; font-size: 0.8rem;'>Внутренняя система Дача 2000 | Версия 2.0</div>", unsafe_allow_html=True)
