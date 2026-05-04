@@ -19,46 +19,8 @@ try:
     HAS_GENAI = True
 except ImportError:
     HAS_GENAI = False
-# --- 1. ЗАГРУЗКА БАЗЫ ИЗ GOOGLE ТАБЛИЦ ---
-@st.cache_data(ttl=300)
-def load_google_sheet():
-    SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRgxTJ2JPrhh_da9pEBWMoKU3iT5x0DZkzKmKrOKcJBbAos8XmYJDzJyHKvcTtAfPrcpMKDzHW4AWG6/pub?gid=0&single=true&output=csv"
-    
-    boards = {}
-    pipes_joist = {"Труба 60х40х2": 219, "Труба 60х40х3": 290}
-    pipes_frame = {"Труба 80х80х2": 403, "Труба 80х80х3": 475}
-
-    try:
-        df = pd.read_csv(SHEET_URL)
-        for index, row in df.iterrows():
-            brand = str(row['Бренд']).strip()
-            raw_name = str(row['Наименование']).strip()
-            price = float(row['Цена'])
-            unit = str(row['Единица']).strip()
-            width = int(row['Ширина (мм)'])
-            length_m = float(row['Длина (м)'])
-
-            base_name = re.sub(r'\d{4}[хx*]\d{2,3}[хx*]\d{2,3}', '', raw_name, flags=re.IGNORECASE)
-            base_name = re.sub(r'\s*\d+(\.\d+)?\s*м\b', '', base_name, flags=re.IGNORECASE).replace('  ', ' ').strip()
-            
-            if brand not in boards: boards[brand] = {}
-            if base_name not in boards[brand]: boards[brand][base_name] = []
-            
-            board_cost = price if unit.lower() == 'шт' else price * length_m
-
-            boards[brand][base_name].append({
-                "name": raw_name,
-                "length_m": length_m,
-                "price": price,
-                "unit": unit,
-                "width_mm": width,
-                "board_cost": board_cost
-            })
-    except Exception as e:
-        st.error(f"Ошибка загрузки данных: {e}")
-    return boards, pipes_joist, pipes_frame
-
-PARSED_BOARDS, PIPES_JOIST, PIPES_FRAME = load_google_sheet()
+from data_loader import get_terrace_prices
+PARSED_BOARDS, PIPES_JOIST, PIPES_FRAME = get_terrace_prices()
 
 METAL_MARGIN = 1.15
 GAP_MM = 5
