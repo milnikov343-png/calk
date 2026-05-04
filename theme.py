@@ -267,10 +267,7 @@ def apply_theme():
         fill: {expander_text} !important;
     }}
 
-    /* Исправление цвета текста в выпадающих списках (selectbox) */
-    div[data-baseweb="select"] * {{ color: {text_main} !important; }}
-    div[data-baseweb="popover"] * {{ color: {text_main} !important; }}
-    li[role="option"] * {{ color: {text_main} !important; }}
+    /* Исправление цвета текста в выпадающих списках (selectbox) - удалено для поддержки нативных стилей Streamlit */
 
     /* ====== КНОПКИ — КОНТРАСТ ====== */
     button[data-testid="stBaseButton-primary"] {{
