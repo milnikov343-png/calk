@@ -1,4 +1,5 @@
 import streamlit as st
+st.set_page_config(page_title="Дача 2000 | Умный Калькулятор", layout="wide", initial_sidebar_state="collapsed")
 import os
 import math
 import matplotlib.pyplot as plt
@@ -290,8 +291,6 @@ def polygon_row_segments(vertices, y):
             segments.append((intersections[i], intersections[i + 1]))
     return segments
 
-# --- 3. ИНТЕРФЕЙС И ВЫБОР ФОРМЫ ---
-st.set_page_config(page_title="Дача 2000 | Умный Калькулятор", layout="wide", initial_sidebar_state="collapsed")
 
 # --- Тема оформления ---
 is_light = st.session_state.get('theme', 'dark') == 'light'

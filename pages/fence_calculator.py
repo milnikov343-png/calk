@@ -1,4 +1,10 @@
 import streamlit as st
+st.set_page_config(
+    page_title="Дача 2000 | Умный Калькулятор",
+    page_icon=":material/construction:",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 import math
 import json
 import os
@@ -1415,12 +1421,7 @@ def create_fence_pdf(result, params):
 # ============================================================
 # STREAMLIT UI
 # ============================================================
-st.set_page_config(
-    page_title="Дача 2000 | Калькулятор Заборов",
-    page_icon=":material/construction:",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+
 
 # --- Стили ---
 # --- Тема оформления ---
