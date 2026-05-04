@@ -1704,10 +1704,12 @@ def render_grouped_table(items, categorize_func, total_sum, theme_text, theme_bo
     
     html = f"<div style='border: 1px solid {theme_border}; border-radius: 8px; overflow: hidden;'>"
     
+    import re
     for cat, cat_items in groups.items():
+        cat_display = re.sub(r':material/(\w+):', r'<span class="material-symbols-outlined" style="vertical-align: middle; margin-right: 5px; font-size: 1.2rem;">\1</span>', cat)
         html += f"""
         <div style='background-color: {highlight_color}20; padding: 10px 15px; font-weight: bold; border-bottom: 1px solid {theme_border};'>
-            {cat}
+            {cat_display}
         </div>
         <table style='width: 100%; border-collapse: collapse; text-align: left; margin: 0; font-size: 0.95rem;'>
             <tr style='border-bottom: 1px solid {theme_border}; opacity: 0.7; font-size: 0.85rem;'>
@@ -1820,71 +1822,3 @@ with col_crm:
         else:
             st.warning(":material/warning: Введите URL Webhook")
 
-# ============================================================
-# РЕДАКТОР ЦЕН
-# ============================================================
-st.markdown("---")
-with st.expander("💰 РЕДАКТОР ЦЕН (Настройка прайс-листа)", expanded=False):
-    st.info("🔒 Цены сохраняются автоматически в файл и не сбрасываются при перезагрузке.")
-
-    price_tab1, price_tab2, price_tab3 = st.tabs(["🔧 Основные цены", "📄 Профлист", ":material/crop_din: Штакет"])
-
-    with price_tab1:
-        changed = False
-        cols = st.columns(3)
-        sorted_keys = sorted(prices.keys())
-        for i, key in enumerate(sorted_keys):
-            with cols[i % 3]:
-                new_val = st.number_input(
-                    key, value=float(prices[key]), step=10.0,
-                    key=f"price_{key}", format="%.1f"
-                )
-                if new_val != prices[key]:
-                    prices[key] = new_val
-                    changed = True
-
-        if changed:
-            save_prices(prices, proflist, shtaket)
-            st.toast(":material/check_circle: Цены сохранены!")
-
-    with price_tab2:
-        changed_p = False
-        cols_p = st.columns(3)
-        for i, (key, val) in enumerate(proflist.items()):
-            with cols_p[i % 3]:
-                new_val = st.number_input(
-                    f"{key} (₽/м²)", value=float(val), step=10.0,
-                    key=f"proflist_{key}", format="%.0f"
-                )
-                if new_val != proflist[key]:
-                    proflist[key] = new_val
-                    changed_p = True
-
-        if changed_p:
-            save_prices(prices, proflist, shtaket)
-            st.toast(":material/check_circle: Цены на профлист сохранены!")
-
-    with price_tab3:
-        changed_s = False
-        cols_s = st.columns(2)
-        for i, (key, val) in enumerate(shtaket.items()):
-            with cols_s[i % 2]:
-                new_price = st.number_input(
-                    f"{key} (₽/шт)", value=float(val["price"]), step=5.0,
-                    key=f"shtaket_p_{key}", format="%.0f"
-                )
-                if new_price != shtaket[key]["price"]:
-                    shtaket[key]["price"] = new_price
-                    changed_s = True
-
-        if changed_s:
-            save_prices(prices, proflist, shtaket)
-            st.toast(":material/check_circle: Цены на штакет сохранены!")
-
-    # Кнопка сброса
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button(":material/refresh: Сбросить все цены к заводским", type="secondary"):
-        if os.path.exists(PRICES_FILE):
-            os.remove(PRICES_FILE)
-        st.toast("Цены сброшены!")
-        st.rerun()
