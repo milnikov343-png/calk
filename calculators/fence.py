@@ -1,0 +1,1152 @@
+import math
+import json
+import os
+import datetime
+from fpdf import FPDF
+import io
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import pandas as pd
+import urllib.request
+import csv
+import ssl
+
+from data_loader import get_fence_prices
+
+# ============================================================
+# РАСЧЕТЫ (все формулы из Excel)
+# ============================================================
+def calculate_fence(params, prices, proflist, shtaket, parsed_data):
+    calc_mode = params.get("calc_mode", "express")
+    fence_height = params["fence_height"]
+    material_type = params["material_type"]
+    material_name = params["material_name"]
+    gap = params["gap"]
+    fastener = params["fastener"]
+    color_ral = params["color_ral"]
+
+    stolb_type = params["stolb_type"]
+    post_type = params.get("post_type", "metal")  # metal / brick / polish
+    lag_rows = params["lag_rows"]
+    lag_pipe_type = params.get("lag_pipe_type", "40x20x1.5")
+    distance_km = params["distance_km"]
+    post_pitch = params.get("post_pitch", 3.0)
+    hole_depth = params.get("hole_depth", 1.5)
+    hole_diameter = params.get("hole_diameter", 0.2)
+    ground_distance = params.get("ground_distance", 0.05)
+    foundation_type = params.get("foundation_type", "concrete")  # concrete / crushedStone / driving
+    brick_type = params.get("brick_type", "полуторный")
+    brick_seam = params.get("brick_seam", 10)  # мм
+    cap_type = params.get("cap_type", "none")  # none / metal / polymer
+
+    has_fundament = params["has_fundament"]
+    fund_length = params["fund_length"]
+    fund_width = params["fund_width"]
+    fund_height = params["fund_height"]
+
+    # Парапеты
+    has_parapet = params.get("has_parapet", False)
+    parapet_form = params.get("parapet_form", "прямая")
+    parapet_length = params.get("parapet_length", 0)
+
+    address = params["address"]
+    contact = params["contact"]
+
+    # Функция расчета одной стороны/элемента (как в JS)
+    def calc_side(length, height, gates_and_doors):
+        import math
+        # Определяем ширину листа
+        sheet_width = 1.15
+        if "С21" in material_name: sheet_width = 1.00
+        elif "С10" in material_name or "HC10" in material_name: sheet_width = 1.10
+        elif "С8" in material_name: sheet_width = 1.15
+
+        total_profile_area = 0
+        total_sheets_count = 0
+        total_screws = 0
+
+        def calc_element_profile(el_length, el_height):
+            nonlocal total_profile_area, total_sheets_count, total_screws
+            el_area = el_length * max(0, el_height - ground_distance)
+            if material_type in ["Жалюзи", "Юнис", "Локо"]:
+                jalousie_step = params.get("jalousie_step", 84)
+                slats = math.ceil(max(0, el_height - ground_distance) * 1000 / jalousie_step)
+                el_sheets = slats
+                screws = 0
+            elif material_type == "Ранчо":
+                rancho_w = params.get("rancho_w", 100) / 1000.0
+                gap_rancho = params.get("gap", 0.04)
+                el_sheets = round(max(0, el_height - ground_distance) / (rancho_w + gap_rancho))
+                screws = 0
+            elif material_type == "Профнастил":
+                el_sheets = math.ceil(el_length / sheet_width)
+                screws_per_sheet = math.ceil(max(0, el_height - ground_distance) / 0.5) * 2
+                screws = el_sheets * screws_per_sheet
+            elif material_type == "Штакет":
+                sh_data = shtaket.get(material_name, {"price": 55, "width_m": 0.1})
+                sh_width = sh_data["width_m"]
+                el_sheets = math.ceil(el_length / (sh_width + gap))
+                screws = el_sheets * 4
+            else:  # Шахматка
+                sh_data = shtaket.get(material_name, {"price": 55, "width_m": 0.1})
+                sh_width = sh_data["width_m"]
+                el_sheets = math.ceil(el_length / (sh_width + gap)) * 2
+                screws = el_sheets * 4
+
+            total_profile_area += el_area
+            total_sheets_count += el_sheets
+            total_screws += screws
+            return el_sheets
+
+        available_length = length
+        gate_door_count = 0
+        extra80_posts = 0
+
+        for item in gates_and_doors:
+            available_length -= item["width"]
+            gate_door_count += 1
+            extra80_posts += 2
+            calc_element_profile(item["width"], height)
+
+        available_length = max(0, available_length)
+
+        # --- Кирпичные столбы (логика из JS results.js:120-164) ---
+        total_bricks = 0
+        bricks_per_post = 0
+        rows_per_post = 0
+        actual_section_width = 0
+
+        if post_type == 'brick':
+            post_count = math.ceil(length / post_pitch) + 1
+            sections = max(0, post_count - 1)
+            total_brick_width = post_count * 0.385  # ширина кирпичного столба 385мм
+            free_space = length - total_brick_width
+
+            # Расчёт кирпичей
+            brick_h = 0.088 if brick_type == 'полуторный' else 0.065
+            seam_m = brick_seam / 1000.0
+            post_height = height + (hole_depth or 0)
+            rows_per_post = math.ceil(post_height / (brick_h + seam_m))
+            bricks_per_row = 4
+            bricks_per_post = rows_per_post * bricks_per_row
+            total_bricks = bricks_per_post * post_count
+
+            # Лаги — только если есть свободное пространство
+            if free_space > 0 and sections > 0:
+                actual_section_width = free_space / sections
+                lag_total_count = lag_total_count = sections * lag_rows if material_type in ["Профнастил", "Штакет", "Шахматка"] else 0
+            else:
+                actual_section_width = 0
+                lag_total_count = 0
+
+            # Профнастил для всей длины
+            calc_element_profile(available_length, height)
+            for item in gates_and_doors:
+                calc_element_profile(item["width"], height)
+
+        else:
+            # Металлические столбы (существующая логика)
+            if available_length > 0:
+                section_count = math.ceil(available_length / post_pitch)
+            else:
+                section_count = 0
+
+            post_count = max(0, section_count + 1 - gate_door_count)
+            if available_length == 0:
+                post_count = 0
+
+            lag_total_count = lag_total_count = section_count * lag_rows if material_type in ["Профнастил", "Штакет", "Шахматка"] else 0
+
+            if available_length > 0:
+                calc_element_profile(available_length, height)
+
+        # Саморезы для лаг
+        total_screws += lag_total_count * 2
+
+        # --- Закрепление столбов (бетон / забутовка / вбивание) ---
+        radius = hole_diameter / 2
+        one_hole_vol = math.pi * radius * radius * hole_depth
+        total_posts_for_holes = post_count + (extra80_posts if post_type == 'metal' else 0)
+
+        concrete_vol = 0
+        crushed_stone_vol = 0
+        crushed_stone_weight = 0
+
+        if foundation_type == 'concrete':
+            concrete_vol = one_hole_vol * total_posts_for_holes
+        elif foundation_type == 'crushedStone':
+            crushed_stone_vol = one_hole_vol * total_posts_for_holes
+            crushed_stone_weight = crushed_stone_vol * 1400  # кг (1.4 т/м3)
+        # driving — ничего не нужно
+
+        return {
+            "post_count": post_count,
+            "extra80_posts": extra80_posts,
+            "lag_total_count": lag_total_count,
+            "profile_area": total_profile_area,
+            "sheets_count": total_sheets_count,
+            "total_screws": total_screws,
+            "concrete_vol": concrete_vol,
+            "crushed_stone_vol": crushed_stone_vol,
+            "crushed_stone_weight": crushed_stone_weight,
+            "montazh_length": available_length,
+            "total_bricks": total_bricks,
+            "bricks_per_post": bricks_per_post,
+            "rows_per_post": rows_per_post,
+        }
+
+    # Сбор данных
+    total_stolby = 0
+    total_stolby_vorota = 0
+    total_lagi = 0
+    total_finish_qty = 0
+    total_screws = 0
+    total_concrete_vol = 0
+    total_crushed_stone_vol = 0
+    total_crushed_stone_weight = 0
+    total_montazh_length = 0
+    total_bricks = 0
+
+    kalitki_dict = {}
+    otkatnye_dict = {}
+    raspashnye_dict = {}
+    fence_length_total = 0
+
+    def _accumulate(res):
+        nonlocal total_stolby, total_stolby_vorota, total_lagi, total_finish_qty
+        nonlocal total_screws, total_concrete_vol, total_crushed_stone_vol
+        nonlocal total_crushed_stone_weight, total_montazh_length, total_bricks
+        total_stolby += res["post_count"]
+        total_stolby_vorota += res["extra80_posts"]
+        total_lagi += res["lag_total_count"]
+        total_finish_qty += res["sheets_count"]
+        total_screws += res["total_screws"]
+        total_concrete_vol += res["concrete_vol"]
+        total_crushed_stone_vol += res.get("crushed_stone_vol", 0)
+        total_crushed_stone_weight += res.get("crushed_stone_weight", 0)
+        total_montazh_length += res["montazh_length"]
+        total_bricks += res.get("total_bricks", 0)
+
+    if calc_mode == "detailed":
+        sides_data = params.get("sides_data", [])
+        for s in sides_data:
+            fence_length_total += s["length"]
+            if s.get("kalitka_count", 0) > 0:
+                t = s.get("kalitka_type", "Калитка стандарт")
+                kalitki_dict[t] = kalitki_dict.get(t, 0) + s["kalitka_count"]
+            if s.get("otkatnye_count", 0) > 0:
+                t = s.get("otkatnye_type", "Ворота откатные стандарт")
+                otkatnye_dict[t] = otkatnye_dict.get(t, 0) + s["otkatnye_count"]
+            if s.get("raspashnye_count", 0) > 0:
+                t = s.get("raspashnye_type", "Ворота распашные стандарт")
+                raspashnye_dict[t] = raspashnye_dict.get(t, 0) + s["raspashnye_count"]
+            
+            g_d = []
+            for _ in range(s.get("kalitka_count", 0)): g_d.append({"type": "door", "width": 1.0})
+            for _ in range(s.get("otkatnye_count", 0)): g_d.append({"type": "gate", "width": 4.0})
+            for _ in range(s.get("raspashnye_count", 0)): g_d.append({"type": "gate", "width": 4.0})
+            
+            res = calc_side(s["length"], fence_height, g_d)
+            _accumulate(res)
+    else:
+        fence_length_total = params.get("fence_length", 0)
+        has_kalitka = params.get("has_kalitka", False)
+        if has_kalitka and params.get("kalitka_count", 0) > 0:
+            kalitki_dict[params.get("kalitka_type", "Калитка стандарт")] = params["kalitka_count"]
+            
+        has_otkatnye = params.get("has_otkatnye", False)
+        if has_otkatnye and params.get("otkatnye_count", 0) > 0:
+            otkatnye_dict[params.get("otkatnye_type", "Ворота откатные стандарт")] = params["otkatnye_count"]
+            
+        has_raspashnye = params.get("has_raspashnye", False)
+        if has_raspashnye and params.get("raspashnye_count", 0) > 0:
+            raspashnye_dict[params.get("raspashnye_type", "Ворота распашные стандарт")] = params["raspashnye_count"]
+        
+        g_d = []
+        for _ in range(sum(kalitki_dict.values())): g_d.append({"type": "door", "width": 1.0})
+        for _ in range(sum(otkatnye_dict.values())): g_d.append({"type": "gate", "width": 4.0})
+        for _ in range(sum(raspashnye_dict.values())): g_d.append({"type": "gate", "width": 4.0})
+        
+        res = calc_side(fence_length_total, fence_height, g_d)
+        _accumulate(res)
+
+    # --- Цены установки/монтажа ---
+    base_m = 1000; base_3l = 1500; base_2s = 1700; base_premium = 2000
+    
+    works_data = parsed_data.get("works", {})
+    if works_data:
+        # Standard rates
+        for bracket in works_data.get("standard", []):
+            range_str = bracket["range"]
+            if "-" in range_str:
+                parts = range_str.split("-")
+                min_l = int(parts[0])
+                max_l = int(parts[1])
+                if min_l <= fence_length_total <= max_l:
+                    base_m = bracket["prof_2lag"]
+                    base_3l = bracket["prof_3lag"]
+                    base_2s = bracket["shtaket_2side"]
+                    break
+            elif "более" in range_str:
+                parts = range_str.split()
+                min_l = int(parts[0])
+                if fence_length_total >= min_l:
+                    base_m = bracket["prof_2lag"]
+                    base_3l = bracket["prof_3lag"]
+                    base_2s = bracket["shtaket_2side"]
+                    break
+
+        # Premium rates (Жалюзи, Ранчо)
+        for bracket in works_data.get("premium", []):
+            range_str = bracket["range"]
+            if "-" in range_str:
+                parts = range_str.split("-")
+                min_l = int(parts[0])
+                max_l = int(parts[1])
+                if min_l <= fence_length_total <= max_l:
+                    base_premium = bracket["price"]
+                    break
+            elif "более" in range_str:
+                parts = range_str.split()
+                min_l = int(parts[0])
+                if fence_length_total >= min_l:
+                    base_premium = bracket["price"]
+                    break
+
+    # Базовая логика цены столбов для старых расчетов (если потребуется)
+    price_stolb_install = 400
+    if fence_length_total < 31: price_stolb_install = 500
+    elif fence_length_total < 51: price_stolb_install = 450
+
+    if material_type in ["Жалюзи", "Ранчо", "Локо", "Юнис"]:
+        price_montazh = base_premium
+    elif material_type == "Шахматка" or (material_type == "Штакет" and params.get("double_sided", False)):
+        price_montazh = base_2s
+    elif lag_rows == 3:
+        price_montazh = base_3l
+    else:
+        price_montazh = base_m
+
+    price_pokraska = 50 if fence_length_total < 30 else (30 if fence_length_total < 50 else 25)
+
+    # --- Цена столба (выбранного типа) ---
+    stolb_names = {
+        "60х60х2мм": "Столб 60х60х2мм",
+        "73мм НКТ": "Столб 73мм НКТ",
+        "60х40х2мм": "Столб 60х40х2мм",
+        "80х80х2мм": "Столб 80х80х2мм",
+    }
+    stolb_price_key = stolb_names.get(stolb_type, "Столб 60х60х2мм")
+    stolb_price_per_mp = prices.get(stolb_price_key, 944)
+
+    # --- Финишный материал ---
+    finish_price_total = 0
+    jalousie_items = []  # доп. материалы жалюзи
+    
+    if material_type in ["Жалюзи", "Юнис", "Локо", "Ранчо"]:
+        # Количество секций и ширина секции
+        if total_montazh_length > 0 and total_stolby > 0:
+            num_sections_fence = max(total_stolby, 1)
+            section_width = total_montazh_length / num_sections_fence
+        else:
+            num_sections_fence = 0
+            section_width = post_pitch
+            
+        effective_height = max(0, fence_height - ground_distance)
+        lamella_length = max(0, section_width - 0.006)  # -6мм на П-профили
+
+        if material_type == "Ранчо":
+            rancho_w_m = params.get("rancho_w", 100) / 1000.0
+            gap_rancho = params.get("gap", 0.04)
+            slats_per_section = round(effective_height / (rancho_w_m + gap_rancho))
+            real_height = effective_height
+            
+            item_desc = f"Доска {material_name}"
+            lamel_price_mp = prices.get(f"Доска {material_name} (м.п.)", 450)
+            jalousie_step = rancho_w_m * 1000  # для расчета ворот
+        else:
+            jalousie_step = params.get("jalousie_step", 84)
+            slats_per_section = math.ceil(effective_height * 1000 / jalousie_step)
+            real_height = slats_per_section * jalousie_step / 1000
+            
+            if material_type == "Жалюзи":
+                jalousie_profile = params.get("jalousie_profile", "ROYAL Z")
+                lamel_price_keys = {
+                    "ROYAL Z": "Ламель ROYAL Z (м.п.)",
+                    "ELITE S-образная": "Ламель ELITE S-образная (м.п.)",
+                    "LUXE V-образная": "Ламель LUXE V-образная (м.п.)",
+                }
+                lamel_price_mp = prices.get(lamel_price_keys.get(jalousie_profile, "Ламель ROYAL Z (м.п.)"), 420)
+                item_desc = f"Ламель {jalousie_profile} (шаг {jalousie_step}мм)"
+            else:
+                prof_name = material_name.replace("Юнис ", "").replace("Локо ", "")
+                lamel_price_mp = prices.get(f"Ламель {prof_name} (м.п.)", 500)
+                item_desc = f"Ламель {prof_name} (шаг {jalousie_step}мм)"
+
+        p_prof_holes_price = prices.get("П-профиль с перфорацией (м.п.)", 280)
+        p_prof_plain_price = prices.get("П-профиль без перфорации (м.п.)", 260)
+        reinforcer_price = prices.get("Усилитель 0.5х51 (м.п.)", 220)
+        finishing_prof_price = prices.get("Профиль завершающий жалюзи (м.п.)", 230)
+        rivet_price = prices.get("Заклёпка 4х10 (шт)", 3)
+
+        total_slats = slats_per_section * num_sections_fence
+        total_lamel_mp = round(total_slats * lamella_length, 2)
+        lamel_total_cost = round(total_lamel_mp * lamel_price_mp)
+        
+        p_holes_qty = 2 * num_sections_fence
+        p_holes_length_each = real_height if material_type != "Ранчо" else effective_height
+        p_holes_mp = round(p_holes_qty * p_holes_length_each, 2)
+        p_holes_cost = round(p_holes_mp * p_prof_holes_price)
+        
+        p_plain_qty = num_sections_fence
+        p_plain_length_each = lamella_length
+        p_plain_mp = round(p_plain_qty * p_plain_length_each, 2)
+        p_plain_cost = round(p_plain_mp * p_prof_plain_price)
+        
+        reinf_per_section = 0
+        if section_width > 3.5:
+            reinf_per_section = 2
+        elif section_width > 2.5:
+            reinf_per_section = 1
+        reinf_qty = reinf_per_section * num_sections_fence
+        reinf_length = lamella_length
+        reinf_mp = round(reinf_qty * reinf_length, 2)
+        reinf_cost = round(reinf_mp * reinforcer_price)
+        
+        rivets_qty = math.ceil(total_slats * 4 * 1.01)
+        rivets_cost = rivets_qty * rivet_price
+        
+        finish_prof_qty = num_sections_fence
+        finish_prof_mp = round(finish_prof_qty * lamella_length, 2)
+        finish_prof_cost = round(finish_prof_mp * finishing_prof_price)
+        
+        finish_price_total = lamel_total_cost  # основной финишный материал
+        
+        jalousie_items = [
+            {"name": item_desc,
+             "unit": "шт", "qty": total_slats, "mp": total_lamel_mp,
+             "price_mp": lamel_price_mp, "total": lamel_total_cost},
+            {"name": "П-профиль с перфорацией (боковой)",
+             "unit": "шт", "qty": p_holes_qty, "mp": p_holes_mp,
+             "price_mp": p_prof_holes_price, "total": p_holes_cost},
+            {"name": "П-профиль без перфорации (верхний)",
+             "unit": "шт", "qty": p_plain_qty, "mp": p_plain_mp,
+             "price_mp": p_prof_plain_price, "total": p_plain_cost},
+        ]
+        
+        if material_type != "Ранчо":
+            jalousie_items.append(
+                {"name": "Профиль завершающий",
+                 "unit": "шт", "qty": finish_prof_qty, "mp": finish_prof_mp,
+                 "price_mp": finishing_prof_price, "total": finish_prof_cost}
+            )
+            
+        if reinf_qty > 0:
+            jalousie_items.append(
+                {"name": "Усилитель 0.5х51",
+                 "unit": "шт", "qty": reinf_qty, "mp": reinf_mp,
+                 "price_mp": reinforcer_price, "total": reinf_cost}
+            )
+        jalousie_items.append(
+            {"name": "Заклёпка 4х10 (запас +1%)",
+             "unit": "шт", "qty": rivets_qty, "mp": 0,
+             "price_mp": rivet_price, "total": rivets_cost}
+        )
+        
+        # Также считаем ламели в ворота/калитки
+        gate_slats_total = 0
+        gate_step_mm = jalousie_step if material_type != "Ранчо" else (rancho_w_m + gap_rancho) * 1000
+
+        n_otkatnye = sum(otkatnye_dict.values())
+        n_raspashnye = sum(raspashnye_dict.values())
+        n_kalitka = sum(kalitki_dict.values())
+
+        if n_otkatnye > 0:
+            gate_h = fence_height
+            gate_w = 4.0
+            gate_slats = round(max(0, gate_h - ground_distance) * 1000 / gate_step_mm) if material_type == "Ранчо" else math.ceil(max(0, gate_h - ground_distance) * 1000 / jalousie_step)
+            gate_lamel_len = gate_w - 0.006
+            gate_slats_n = gate_slats * n_otkatnye
+            gate_mp = round(gate_slats_n * gate_lamel_len, 2)
+            gate_slats_total += gate_slats_n
+            jalousie_items.append(
+                {"name": f"{item_desc} (ворота откатные {gate_w}м)",
+                 "unit": "шт", "qty": gate_slats_n, "mp": gate_mp,
+                 "price_mp": lamel_price_mp, "total": round(gate_mp * lamel_price_mp)}
+            )
+        if n_raspashnye > 0:
+            gate_h = fence_height
+            gate_w = 4.0
+            gate_slats = round(max(0, gate_h - ground_distance) * 1000 / gate_step_mm) if material_type == "Ранчо" else math.ceil(max(0, gate_h - ground_distance) * 1000 / jalousie_step)
+            gate_lamel_len = gate_w - 0.006
+            gate_slats_n = gate_slats * n_raspashnye
+            gate_mp = round(gate_slats_n * gate_lamel_len, 2)
+            gate_slats_total += gate_slats_n
+            jalousie_items.append(
+                {"name": f"{item_desc} (ворота распашные {gate_w}м)",
+                 "unit": "шт", "qty": gate_slats_n, "mp": gate_mp,
+                 "price_mp": lamel_price_mp, "total": round(gate_mp * lamel_price_mp)}
+            )
+        if n_kalitka > 0:
+            kal_h = fence_height
+            kal_w = 1.0
+            kal_slats = round(max(0, kal_h - ground_distance) * 1000 / gate_step_mm) if material_type == "Ранчо" else math.ceil(max(0, kal_h - ground_distance) * 1000 / jalousie_step)
+            kal_lamel_len = kal_w - 0.006
+            kal_slats_n = kal_slats * n_kalitka
+            kal_mp = round(kal_slats_n * kal_lamel_len, 2)
+            gate_slats_total += kal_slats_n
+            jalousie_items.append(
+                {"name": f"{item_desc} (калитка {kal_w}м)",
+                 "unit": "шт", "qty": kal_slats_n, "mp": kal_mp,
+                 "price_mp": lamel_price_mp, "total": round(kal_mp * lamel_price_mp)}
+            )
+    elif material_type == "Профнастил":
+        price_m2 = proflist.get(material_name, 465)
+        finish_price_total = round(total_finish_qty * 1.22 * fence_height * price_m2)
+    elif material_type in ["Штакет", "Шахматка"]:
+        sh_data = shtaket.get(material_name, {"price": 55, "width_m": 0.1})
+        sh_price = sh_data["price"]
+        finish_price_total = round(total_finish_qty * sh_price * fence_height)
+
+    # --- Саморезы (креплёж) ---
+    fastener_price = prices.get(fastener, 3.5)
+    samorez_qty = math.ceil(max(total_screws, 1) / 250) * 250 if material_type != "Жалюзи" else 0
+
+    # --- Расходные материалы ---
+    elektrod_packs = max(math.ceil(fence_length_total / 120), 1)
+    kraska_cans = max(math.ceil(fence_length_total / 30), 1)
+    
+    # Конвертация объема бетона лунок в мешки (Примерно: из мешка 50кг = 0.022 м3 бетона, либо цемент+щебень)
+    # 1 м3 бетона = ~350 кг цемента (7 мешков) и ~1200 кг щебня (24 мешка)
+    cement_bags = math.ceil(total_concrete_vol * 7)
+    scheben_bags = math.ceil(total_concrete_vol * 24)
+    otsev_bags = scheben_bags
+
+    n_kalitka = sum(kalitki_dict.values())
+    n_otkatnye = sum(otkatnye_dict.values())
+    n_raspashnye = sum(raspashnye_dict.values())
+    pokraska_mp = (total_lagi * 3) + (total_stolby * 2) + (n_kalitka * 7) + (n_otkatnye * 70) + (n_raspashnye * 40)
+    valik_qty = 3 if fence_length_total < 50 else 6
+    zink_qty = 1 if fence_length_total <= 100 else 2
+    disk_qty = math.ceil(fence_length_total / 10)
+    delivery_cost = round(distance_km * prices.get("Доставка (коэфф. расстояния)", 204))
+
+    # --- ФУНДАМЕНТ (опционально) ---
+    fund_items = []
+    if has_fundament:
+        beton_m3 = fund_length * fund_width * fund_height
+        if beton_m3 > 8:
+            fund_work_unit = "м3"
+            fund_work_qty = beton_m3
+            fund_work_price = 7080
+        else:
+            fund_work_unit = "м.п."
+            fund_work_qty = fund_length
+            fund_work_price = 2280
+
+        doska_qty = round(33 * fund_height / 10 * 0.2 * 6, 1)
+        fix_stul = round(fund_length * 10 / 100) * 100
+        fix_zvezda = fix_stul
+        plenka_mp = round(fund_length + 10)
+        samorezy_opal = math.ceil(fund_length / 10) * 7
+        armatura_mp = round(((fund_length / 5.85) + fund_length) * 4, 1)
+        katanka_mp = round(((fund_length / 0.3) + 1) / 3 * 5.85, 1)
+        provolka_kg = round(fund_length / 10 * 2.5, 1)
+
+        fund_items = [
+            {"name": "Бетон М300 W8 Р4", "unit": "м3", "qty": round(beton_m3, 2),
+             "price": prices.get("Бетон М300 W8 (м3)", 6900)},
+            {"name": "Доска 40х200х6000 для опалубки", "unit": "м3", "qty": doska_qty,
+             "price": prices.get("Доска 40х200х6000 для опалубки", 14500)},
+            {"name": "Фиксатор арматуры стульчик", "unit": "шт", "qty": fix_stul,
+             "price": prices.get("Фиксатор арматуры стульчик", 3.5)},
+            {"name": "Фиксатор арматуры звездочка", "unit": "шт", "qty": fix_zvezda,
+             "price": prices.get("Фиксатор арматуры звездочка", 3.5)},
+            {"name": "Пленка техническая 150мкр", "unit": "м.п.", "qty": plenka_mp,
+             "price": prices.get("Пленка техническая 150мкр", 45)},
+            {"name": "Саморезы для опалубки", "unit": "шт", "qty": samorezy_opal,
+             "price": prices.get("Саморезы для опалубки", 3.2)},
+            {"name": "Арматура 12мм А500С", "unit": "м.п.", "qty": armatura_mp,
+             "price": prices.get("Арматура 12мм А500С (м.п.)", 63)},
+            {"name": "Катанка 6.5мм", "unit": "м.п.", "qty": katanka_mp,
+             "price": prices.get("Катанка 6.5мм (м.п.)", 22)},
+            {"name": "Проволка для связки 3мм", "unit": "кг", "qty": provolka_kg,
+             "price": prices.get("Проволка для связки 3мм (кг)", 350)},
+        ]
+
+    def get_additional_price(name_substring, default_price):
+        for item in works_data.get("additional", []):
+            if name_substring.lower() in item["name"].lower():
+                return item["price"]
+        return default_price
+
+    price_montazh_otk = get_additional_price("монтаж откатных ворот без привода", 36000)
+    price_montazh_privod = get_additional_price("монтаж привода под откатные ворота", 5400)
+    price_montazh_rasp = get_additional_price("монтаж распашных ворот", 11900)
+    price_montazh_kal = get_additional_price("монтаж калитки", 9000)
+
+    # ======== ФОРМИРОВАНИЕ ИТОГОВОЙ ТАБЛИЦЫ ========
+    works = []
+    materials = []
+
+    works.append({
+        "name": "Монтаж столбов на глубину бурения, выставление по уровню, заливка бетоном",
+        "unit": "шт.", "qty": total_stolby, "price": price_stolb_install,
+        "total": total_stolby * price_stolb_install
+    })
+    works.append({
+        "name": f"Бурение отверстий в грунте глубиной {hole_depth*1000:.0f}мм",
+        "unit": "шт", "qty": total_stolby, "price": price_stolb_install,
+        "total": total_stolby * price_stolb_install
+    })
+    works.append({
+        "name": "Монтаж забора",
+        "unit": "м.п.", "qty": round(total_montazh_length, 1), "price": price_montazh,
+        "total": round(total_montazh_length * price_montazh)
+    })
+
+    for gate_type, count in otkatnye_dict.items():
+        if count > 0:
+            works.append({
+                "name": "Монтаж откатных ворот без привода",
+                "unit": "шт", "qty": count, "price": price_montazh_otk,
+                "total": count * price_montazh_otk
+            })
+            if params.get("has_avtomatika", False):
+                works.append({
+                    "name": "Монтаж привода под откатные ворота с настройкой",
+                    "unit": "шт", "qty": count, "price": price_montazh_privod,
+                    "total": count * price_montazh_privod
+                })
+
+    for gate_type, count in raspashnye_dict.items():
+        if count > 0:
+            works.append({
+                "name": "Монтаж распашных ворот с засовами",
+                "unit": "шт", "qty": count, "price": price_montazh_rasp,
+                "total": count * price_montazh_rasp
+            })
+
+    for gate_type, count in kalitki_dict.items():
+        if count > 0:
+            works.append({
+                "name": "Монтаж калитки с ручкой",
+                "unit": "шт", "qty": count, "price": price_montazh_kal,
+                "total": count * price_montazh_kal
+            })
+
+    works.append({
+        "name": "Покраска металлоконструкции",
+        "unit": "м.п.", "qty": round(pokraska_mp, 1), "price": price_pokraska,
+        "total": round(pokraska_mp * price_pokraska)
+    })
+
+    if has_fundament:
+        works.append({
+            "name": "Монтажные работы по заливке фундамента",
+            "unit": fund_work_unit, "qty": round(fund_work_qty, 1), "price": fund_work_price,
+            "total": round(fund_work_qty * fund_work_price)
+        })
+
+    if material_type in ["Жалюзи", "Юнис", "Локо", "Ранчо"]:
+        # Добавляем все компоненты жалюзи в смету
+        for ji in jalousie_items:
+            materials.append({
+                "name": ji["name"],
+                "unit": ji["unit"],
+                "qty": ji["qty"],
+                "price": ji["price_mp"],
+                "total": ji["total"]
+            })
+    else:
+        materials.append({
+            "name": material_name,
+            "unit": "шт" if material_type != "Профнастил" else "лист",
+            "qty": total_finish_qty,
+            "price": round(finish_price_total / max(total_finish_qty, 1)),
+            "total": finish_price_total
+        })
+        materials.append({
+            "name": fastener,
+            "unit": "шт", "qty": samorez_qty,
+            "price": fastener_price,
+            "total": round(samorez_qty * fastener_price)
+        })
+    # --- Столбы ---
+    if post_type == 'brick':
+        # Кирпичные столбы
+        brick_price_key = f"Кирпич {'полуторный' if brick_type == 'полуторный' else 'одинарный'} (шт)"
+        brick_price = prices.get(brick_price_key, 22 if brick_type == 'полуторный' else 16)
+        materials.append({
+            "name": f"Кирпич {brick_type} для столбов",
+            "unit": "шт", "qty": total_bricks,
+            "price": brick_price,
+            "total": total_bricks * brick_price
+        })
+        # Раствор: ~25кг на 50 кирпичей
+        mortar_bags = math.ceil(total_bricks / 50)
+        mortar_price = prices.get("Раствор кладочный (мешок 25кг)", 350)
+        materials.append({
+            "name": "Раствор кладочный (мешок 25кг)",
+            "unit": "мешок", "qty": mortar_bags,
+            "price": mortar_price,
+            "total": mortar_bags * mortar_price
+        })
+    else:
+        # Металлические столбы
+        materials.append({
+            "name": f"Столб заборный {stolb_type}",
+            "unit": "шт", "qty": total_stolby,
+            "price": stolb_price_per_mp,
+            "total": total_stolby * stolb_price_per_mp
+        })
+    
+    if total_stolby_vorota > 0:
+        stolb_vor_price = prices.get("Столб под ворота 80х80х3000", 1275)
+        materials.append({
+            "name": "Столб под ворота и калитки 80х80х3000",
+            "unit": "шт", "qty": total_stolby_vorota,
+            "price": stolb_vor_price,
+            "total": total_stolby_vorota * stolb_vor_price
+        })
+
+    # --- Колпаки на столбы ---
+    total_posts_all = total_stolby + total_stolby_vorota
+    if cap_type == "metal" and total_posts_all > 0:
+        cap_price = prices.get("Колпак металлический на столб", 450)
+        materials.append({
+            "name": "Колпак металлический на столб",
+            "unit": "шт", "qty": total_posts_all,
+            "price": cap_price,
+            "total": total_posts_all * cap_price
+        })
+    elif cap_type == "polymer" and total_posts_all > 0:
+        cap_price = prices.get("Колпак полимерно-песчаный на столб", 350)
+        materials.append({
+            "name": "Колпак полимерно-песчаный на столб",
+            "unit": "шт", "qty": total_posts_all,
+            "price": cap_price,
+            "total": total_posts_all * cap_price
+        })
+
+    materials.append({
+        "name": "Электроды сварочные Ок-46 3мм",
+        "unit": "пачка", "qty": elektrod_packs,
+        "price": prices.get("Электроды сварочные Ок-46 3мм (пачка)", 2600),
+        "total": elektrod_packs * prices.get("Электроды сварочные Ок-46 3мм (пачка)", 2600)
+    })
+    materials.append({
+        "name": "Краска грунт-эмаль 3в1",
+        "unit": "банка", "qty": kraska_cans,
+        "price": prices.get("Краска грунт-эмаль 3в1", 2200),
+        "total": kraska_cans * prices.get("Краска грунт-эмаль 3в1", 2200)
+    })
+
+    # --- Лаги (выбор типа трубы) ---
+    if lag_pipe_type == "40x20x2":
+        lag_price_key = "Лага заборная 40х20х2мм"
+        lag_name = "Лага заборная 40х20х2мм"
+        lag_price_default = 420
+    else:
+        lag_price_key = "Лага заборная 40х20х3000мм"
+        lag_name = "Лага заборная 40х20х1.5мм"
+        lag_price_default = 362
+    materials.append({
+        "name": lag_name,
+        "unit": "шт", "qty": total_lagi,
+        "price": prices.get(lag_price_key, lag_price_default),
+        "total": total_lagi * prices.get(lag_price_key, lag_price_default)
+    })
+
+    # --- Закрепление столбов: бетон / забутовка / вбивание ---
+    if foundation_type == 'concrete':
+        materials.append({
+            "name": "Цемент (мешок 50кг)",
+            "unit": "мешок", "qty": cement_bags,
+            "price": prices.get("Цемент (мешок 50кг)", 550),
+            "total": cement_bags * prices.get("Цемент (мешок 50кг)", 550)
+        })
+        materials.append({
+            "name": "Щебень (мешок 50кг)",
+            "unit": "мешок", "qty": scheben_bags,
+            "price": prices.get("Щебень (мешок 50кг)", 170),
+            "total": scheben_bags * prices.get("Щебень (мешок 50кг)", 170)
+        })
+        materials.append({
+            "name": "Отсев (мешок 50кг)",
+            "unit": "мешок", "qty": otsev_bags,
+            "price": prices.get("Отсев (мешок 50кг)", 170),
+            "total": otsev_bags * prices.get("Отсев (мешок 50кг)", 170)
+        })
+    elif foundation_type == 'crushedStone':
+        # Забутовка — щебень вместо бетона
+        butovka_bags = math.ceil(total_crushed_stone_weight / 50)  # мешки по 50кг
+        butovka_price = prices.get("Щебень для забутовки (мешок 50кг)", 170)
+        materials.append({
+            "name": "Щебень для забутовки (мешок 50кг)",
+            "unit": "мешок", "qty": butovka_bags,
+            "price": butovka_price,
+            "total": butovka_bags * butovka_price
+        })
+    # foundation_type == 'driving' — ничего не добавляем
+
+    # --- Парапеты ---
+    if has_parapet and parapet_length > 0:
+        parapet_price_key = f"Парапет {'прямой' if parapet_form == 'прямая' else 'угольный'} (м.п.)"
+        parapet_price = prices.get(parapet_price_key, 650 if parapet_form == 'прямая' else 750)
+        materials.append({
+            "name": f"Парапет {parapet_form} (м.п.)",
+            "unit": "м.п.", "qty": round(parapet_length, 1),
+            "price": parapet_price,
+            "total": round(parapet_length * parapet_price)
+        })
+
+    for gate_type, count in otkatnye_dict.items():
+        if count > 0:
+            price = get_additional_price(gate_type, 65000)
+            materials.append({
+                "name": gate_type,
+                "unit": "комплект", "qty": count,
+                "price": price,
+                "total": count * price
+            })
+            if params.get("has_avtomatika", False):
+                privod_price = prices.get("Привод для откатных ворот", 33500)
+                materials.append({
+                    "name": "Привод для откатных ворот",
+                    "unit": "шт", "qty": count,
+                    "price": privod_price,
+                    "total": count * privod_price
+                })
+
+    for gate_type, count in raspashnye_dict.items():
+        if count > 0:
+            price = get_additional_price(gate_type, 22000)
+            materials.append({
+                "name": gate_type,
+                "unit": "комплект", "qty": count,
+                "price": price,
+                "total": count * price
+            })
+
+    for gate_type, count in kalitki_dict.items():
+        if count > 0:
+            price = get_additional_price(gate_type, 12000)
+            materials.append({
+                "name": gate_type,
+                "unit": "комплект", "qty": count,
+                "price": price,
+                "total": count * price
+            })
+            zamok_price = prices.get("Замок в калитку", 2250)
+            materials.append({
+                "name": "Замок в калитку",
+                "unit": "шт", "qty": count,
+                "price": zamok_price,
+                "total": count * zamok_price
+            })
+
+    materials.append({
+        "name": "Диски отрезные 125х1,2",
+        "unit": "шт", "qty": disk_qty,
+        "price": prices.get("Диски отрезные 125х1,2", 35),
+        "total": disk_qty * prices.get("Диски отрезные 125х1,2", 35)
+    })
+    materials.append({
+        "name": "Валик с бюгелем полиакриловый",
+        "unit": "шт", "qty": valik_qty,
+        "price": prices.get("Валик с бюгелем", 250),
+        "total": valik_qty * prices.get("Валик с бюгелем", 250)
+    })
+    materials.append({
+        "name": "Цинк холодный (баллончик)",
+        "unit": "шт", "qty": zink_qty,
+        "price": prices.get("Цинк холодный (баллончик)", 450),
+        "total": zink_qty * prices.get("Цинк холодный (баллончик)", 450)
+    })
+    materials.append({
+        "name": "Ветошь для обработки",
+        "unit": "шт", "qty": 1,
+        "price": prices.get("Ветошь", 100),
+        "total": prices.get("Ветошь", 100)
+    })
+    materials.append({
+        "name": "Обезжириватель",
+        "unit": "шт", "qty": 1,
+        "price": prices.get("Обезжириватель", 190),
+        "total": prices.get("Обезжириватель", 190)
+    })
+
+    for fi in fund_items:
+        materials.append({
+            "name": fi["name"],
+            "unit": fi["unit"], "qty": fi["qty"],
+            "price": fi["price"],
+            "total": round(fi["qty"] * fi["price"])
+        })
+
+    materials.append({
+        "name": "Доставка + ГСМ монтажников",
+        "unit": "шт", "qty": 1,
+        "price": delivery_cost,
+        "total": delivery_cost
+    })
+
+    total_works = sum(w["total"] for w in works)
+    total_materials = sum(m["total"] for m in materials)
+    grand_total = total_works + total_materials
+
+    # --- Генерация чертежа ---
+    import io
+    import matplotlib.pyplot as plt
+    plot_bytes = None
+    if params.get("calc_mode") == "detailed":
+        fig, ax = plt.subplots(figsize=(12, 3))
+        current_x = 0
+        
+        # Рисуем каждую сторону друг за другом (в виде прямой линии)
+        for i, s in enumerate(params.get("sides_data", []), 1):
+            s_len = s["length"]
+            # Рисуем линию забора
+            ax.plot([current_x, current_x + s_len], [0, 0], color='black', lw=2)
+            
+            # Добавляем подпись стороны
+            ax.text(current_x + s_len/2, 0.5, f"Сторона {i} ({s_len} м)", ha='center', fontweight='bold', color='blue')
+            
+            def safe_float(val):
+                try:
+                    return float(str(val or 0).replace(',', '.').strip())
+                except ValueError:
+                    return 0.0
+
+            # Ворота и калитки
+            if s.get("kalitka_count", 0) > 0:
+                pos = safe_float(s.get("kalitka_pos"))
+                ax.plot([current_x + pos, current_x + pos + 1], [0, 0], color='green', lw=6, label='Калитка' if i==1 else "")
+                ax.text(current_x + pos + 0.5, -0.8, "Калитка", ha='center', color='green', fontsize=8)
+                
+            if s.get("otkatnye_count", 0) > 0:
+                pos = safe_float(s.get("otkatnye_pos"))
+                ax.plot([current_x + pos, current_x + pos + 4], [0, 0], color='red', lw=6, label='Откатные' if i==1 else "")
+                ax.text(current_x + pos + 2, -0.8, "Отк.ворота", ha='center', color='red', fontsize=8)
+                
+            if s.get("raspashnye_count", 0) > 0:
+                pos = safe_float(s.get("raspashnye_pos"))
+                ax.plot([current_x + pos, current_x + pos + 4], [0, 0], color='purple', lw=6, label='Распашные' if i==1 else "")
+                ax.text(current_x + pos + 2, -0.8, "Расп.ворота", ha='center', color='purple', fontsize=8)
+            
+            # Столбы с шагом 3м
+            posts_count = math.ceil(s_len / 3) + 1
+            for p_i in range(posts_count):
+                px = min(current_x + p_i * 3, current_x + s_len)
+                ax.plot(px, 0, marker='s', color='black', markersize=4)
+                
+            current_x += s_len + 2 # Отступ между сторонами на чертеже
+
+        ax.set_ylim(-2, 2)
+        ax.set_xlim(-1, current_x)
+        ax.axis('off')
+        
+        # Легенда
+        handles, labels = ax.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        if by_label:
+            ax.legend(by_label.values(), by_label.keys(), loc='upper right')
+            
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+        plt.close(fig)
+        plot_bytes = buf.getvalue()
+
+    return {
+        "works": works,
+        "materials": materials,
+        "total_works": total_works,
+        "total_materials": total_materials,
+        "grand_total": grand_total,
+        "plot_bytes": plot_bytes,
+        "params": params,
+    }
+
+
+# ============================================================
+# PDF ГЕНЕРАЦИЯ
+# ============================================================
+def create_fence_pdf(result, params):
+    pdf = FPDF()
+    pdf.add_page()
+
+    # Подключаем шрифт с кириллицей
+    font_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "DejaVuSans.ttf")
+    if os.path.exists(font_path):
+        pdf.add_font("DejaVu", "", font_path)
+        pdf.set_font("DejaVu", "", 10)
+        font = "DejaVu"
+    else:
+        pdf.set_font("Arial", "", 10)
+        font = "Arial"
+
+    # Шапка
+    pdf.set_font(font, "", 14)
+    pdf.cell(0, 8, 'Общество с ограниченной ответственностью', ln=True, align='C')
+    pdf.cell(0, 8, '"Дача 2000"', ln=True, align='C')
+    pdf.set_font(font, "", 9)
+    pdf.cell(0, 6, '624091, Свердловская обл., г. Екатеринбург, ул. 8 Марта, д. 207, оф. 27.', ln=True, align='C')
+    pdf.ln(4)
+
+    pdf.set_font(font, "", 13)
+    pdf.cell(0, 8, 'Калькуляция №1', ln=True, align='C')
+    pdf.ln(2)
+
+    pdf.set_font(font, "", 10)
+    pdf.cell(0, 6, f'Наименование объекта: Монтаж забора', ln=True)
+    pdf.cell(0, 6, f'Адрес: {params.get("address", "")}', ln=True)
+    pdf.cell(0, 6, f'Контактное лицо: {params.get("contact", "")}', ln=True)
+    
+    m_name = params.get("manager_name", "")
+    m_phone = params.get("manager_phone", "")
+    if m_name or m_phone:
+        pdf.cell(0, 6, f'Менеджер проекта: {m_name} {m_phone}', ln=True)
+        
+    pdf.ln(3)
+
+    if params.get("calc_mode") == "detailed":
+        pdf.set_font(font, "", 11)
+        pdf.cell(0, 6, "Конфигурация сторон:", ln=True)
+        pdf.set_font(font, "", 9)
+        for i, s in enumerate(params.get("sides_data", []), 1):
+            s_parts = []
+            if s.get("kalitka_count", 0) > 0:
+                s_parts.append(f'Калитка: {s["kalitka_count"]} шт. (отступ {s.get("kalitka_pos", "")} м)')
+            if s.get("otkatnye_count", 0) > 0:
+                s_parts.append(f'Ворота отк.: {s["otkatnye_count"]} шт. (отступ {s.get("otkatnye_pos", "")} м)')
+            if s.get("raspashnye_count", 0) > 0:
+                s_parts.append(f'Ворота расп.: {s["raspashnye_count"]} шт. (отступ {s.get("raspashnye_pos", "")} м)')
+            
+            s_desc = f'- Сторона {i}: Длина {s["length"]} м.'
+            if s_parts:
+                s_desc += " (" + ", ".join(s_parts) + ")"
+            
+            pdf.cell(0, 5, s_desc, ln=True)
+        pdf.ln(3)
+
+    # Сводка
+    pdf.set_font(font, "", 11)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(95, 8, f'Стоимость работ: {result["total_works"]:,.0f} руб.', 1, 0, 'L', True)
+    pdf.cell(95, 8, f'Стоимость материалов: {result["total_materials"]:,.0f} руб.', 1, 1, 'L', True)
+    pdf.set_font(font, "", 13)
+    pdf.cell(190, 10, f'Сметная стоимость: {result["grand_total"]:,.0f} руб.', 1, 1, 'C', True)
+    pdf.ln(4)
+
+    # Таблица заголовок
+    pdf.set_font(font, "", 8)
+    col_widths = [10, 70, 15, 15, 20, 30, 30]
+    headers = ["№", "Наименование работ и затрат", "Ед.", "Коэфф", "Кол-во", "Цена, руб", "Сумма, руб"]
+    pdf.set_fill_color(220, 220, 220)
+    for i, h in enumerate(headers):
+        pdf.cell(col_widths[i], 7, h, 1, 0, 'C', True)
+    pdf.ln()
+
+    # Работы
+    pdf.set_font(font, "", 7)
+    for idx, w in enumerate(result["works"], 1):
+        name_trunc = w["name"][:42]
+        pdf.cell(col_widths[0], 6, str(idx), 1, 0, 'C')
+        pdf.cell(col_widths[1], 6, name_trunc, 1, 0, 'L')
+        pdf.cell(col_widths[2], 6, w.get("unit", ""), 1, 0, 'C')
+        pdf.cell(col_widths[3], 6, "1", 1, 0, 'C')
+        pdf.cell(col_widths[4], 6, str(w.get("qty", "")), 1, 0, 'C')
+        pdf.cell(col_widths[5], 6, f'{w.get("price", 0):,.0f}', 1, 0, 'R')
+        pdf.cell(col_widths[6], 6, f'{w["total"]:,.0f}', 1, 1, 'R')
+
+    # Материалы
+    start_idx = len(result["works"]) + 1
+    for idx, m in enumerate(result["materials"], start_idx):
+        name_trunc = m["name"][:42]
+        pdf.cell(col_widths[0], 6, str(idx), 1, 0, 'C')
+        pdf.cell(col_widths[1], 6, name_trunc, 1, 0, 'L')
+        pdf.cell(col_widths[2], 6, m.get("unit", ""), 1, 0, 'C')
+        pdf.cell(col_widths[3], 6, "1", 1, 0, 'C')
+        pdf.cell(col_widths[4], 6, str(m.get("qty", "")), 1, 0, 'C')
+        pdf.cell(col_widths[5], 6, f'{m.get("price", 0):,.0f}', 1, 0, 'R')
+        pdf.cell(col_widths[6], 6, f'{m["total"]:,.0f}', 1, 1, 'R')
+
+        # Проверка: переход на новую страницу
+        if pdf.get_y() > 270:
+            pdf.add_page()
+            pdf.set_font(font, "", 8)
+            pdf.set_fill_color(220, 220, 220)
+            for i, h in enumerate(headers):
+                pdf.cell(col_widths[i], 7, h, 1, 0, 'C', True)
+            pdf.ln()
+            pdf.set_font(font, "", 7)
+
+    # ИТОГО
+    pdf.set_font(font, "", 10)
+    pdf.ln(4)
+    pdf.cell(130, 8, "ИТОГО:", 1, 0, 'R', True)
+    pdf.cell(60, 8, f'{result["grand_total"]:,.0f} руб.', 1, 1, 'R', True)
+
+    pdf.ln(6)
+    pdf.set_font(font, "", 10)
+    pdf.cell(0, 6, f'Стоимость строительных работ забора по адресу: {params.get("address", "")}', ln=True)
+    pdf.cell(0, 6, f'Составляет: {result["grand_total"]:,.0f} руб.', ln=True)
+
+    pdf.ln(10)
+    pdf.cell(95, 6, 'СОГЛАСОВАНО:', ln=True)
+    pdf.ln(4)
+    pdf.cell(95, 6, 'Подрядчик:                     ООО "Дача 2000"')
+    pdf.cell(95, 6, 'Заказчик:', ln=True)
+    pdf.ln(10)
+    pdf.cell(95, 6, '_____________________________')
+    pdf.cell(95, 6, '_____________________________', ln=True)
+    pdf.cell(95, 6, 'М.П.')
+
+    # ================= УТП (Unique Selling Proposition) =================
+    pdf.add_page()
+    pdf.set_font(font, "", 14)
+    pdf.set_fill_color(0, 184, 148)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(190, 12, "Почему выбирают ООО «Дача 2000»:", ln=True, align='C', fill=True)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font(font, "", 11)
+    pdf.ln(8)
+    
+    usps = [
+        "- Работаем строго по договору в Екатеринбурге и области.",
+        "- 28 собственных квалифицированных бригад монтажников.",
+        "- Собственное производство конструкций.",
+        "- Честная гарантия на все выполненные работы до 3 лет.",
+        "- Исправляем любые дефекты и несоответствия за свой счет.",
+        "- Не поднимаем стоимость: покрываем непредвиденные расходы за свой счет.",
+        "- Платим неустойку за срыв сроков монтажа (прописано в договоре).",
+        "- Умеем работать в полевых условиях (даже если нет электричества и воды).",
+        "- Cashback 5% от суммы договора на другие услуги по благоустройству."
+    ]
+    
+    for usp in usps:
+        pdf.cell(190, 8, usp, ln=True)
+        
+    pdf.ln(10)
+    pdf.set_font(font, "", 12)
+    pdf.set_text_color(0, 184, 148)
+    pdf.cell(190, 8, "Мы строим надежные заборы для вашей безопасности и комфорта!", ln=True, align='C')
+    pdf.set_text_color(0, 0, 0)
+
+    # ================= ЧЕРТЕЖ =================
+    if "plot_bytes" in result and result["plot_bytes"]:
+        pdf.add_page()
+        pdf.set_font(font, "", 14)
+        pdf.cell(190, 10, "Схема расстановки столбов (вид сверху)", ln=True, align='C')
+        pdf.image(result["plot_bytes"], x=15, y=30, w=180)
+
+    return bytes(pdf.output())
+
+
+# ============================================================
+# STREAMLIT UI
+# ============================================================
+
+
