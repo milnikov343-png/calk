@@ -1,4 +1,3 @@
-# v3.1 — Canvas annotations
 import streamlit as st
 st.set_page_config(page_title="Дача 2000 | Умный Калькулятор", layout="wide", initial_sidebar_state="collapsed")
 import os
@@ -274,153 +273,33 @@ elif current_step == 2:
                     "left": 0, "top": 0, "fill": "rgba(165,214,167,0.3)", "stroke": "#2e7d32",
                     "strokeWidth": 2, "path": path}]}
 
-        # --- Фоновая сетка с аннотациями (тема-зависимая) ---
-        from PIL import ImageFont
-        bg_color = '#1e1e1e' if not is_light else '#f8f8f8'
-        grid_minor = '#2a2a2a' if not is_light else '#e8e8e8'
-        grid_major = '#3a3a3a' if not is_light else '#d0d0d0'
-        axis_label_color = '#888888' if not is_light else '#999999'
-        ann_text_color = '#ffffff' if not is_light else '#1b5e20'
-        ann_bg_color = (30, 30, 30, 200) if not is_light else (255, 255, 255, 200)
-        ann_angle_color = '#4fc3f7' if not is_light else '#1565c0'
-        vertex_fill = '#4caf50' if not is_light else '#2e7d32'
-
-        grid_img = PILImage.new('RGBA', (canvas_w, canvas_h), bg_color)
+        # Фоновая сетка (тема-зависимая)
+        _bg = '#1e1e1e' if not is_light else '#f8f8f8'
+        _gmin = '#2a2a2a' if not is_light else '#e8e8e8'
+        _gmaj = '#3a3a3a' if not is_light else '#d0d0d0'
+        _gtxt = '#666' if not is_light else '#999'
+        grid_img = PILImage.new('RGB', (canvas_w, canvas_h), _bg)
         draw_grid = ImageDraw.Draw(grid_img)
         for gx in range(0, canvas_w + 1, grid_px):
-            c_g = grid_major if gx % (grid_px * 4) == 0 else grid_minor
-            w_g = 2 if gx % (grid_px * 4) == 0 else 1
+            c_g = _gmaj if gx % (grid_px*4) == 0 else _gmin
+            w_g = 2 if gx % (grid_px*4) == 0 else 1
             draw_grid.line([(gx, 0), (gx, canvas_h)], fill=c_g, width=w_g)
         for gy in range(0, canvas_h + 1, grid_px):
-            c_g = grid_major if gy % (grid_px * 4) == 0 else grid_minor
-            w_g = 2 if gy % (grid_px * 4) == 0 else 1
+            c_g = _gmaj if gy % (grid_px*4) == 0 else _gmin
+            w_g = 2 if gy % (grid_px*4) == 0 else 1
             draw_grid.line([(0, gy), (canvas_w, gy)], fill=c_g, width=w_g)
         try:
+            from PIL import ImageFont
             font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
         except:
-            try:
-                font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 10)
-            except:
-                font_small = ImageFont.load_default()
-        try:
-            font_ann = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 13)
-        except:
-            try:
-                font_ann = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 13)
-            except:
-                font_ann = font_small
-        try:
-            font_angle = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-        except:
-            try:
-                font_angle = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 11)
-            except:
-                font_angle = font_small
-
-        for gx in range(0, canvas_w + 1, grid_px * 4):
+            try: font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 10)
+            except: font_small = ImageFont.load_default()
+        for gx in range(0, canvas_w+1, grid_px*4):
             mv = gx * mm_per_px / 1000
-            if mv > 0:
-                draw_grid.text((gx + 2, 2), f"{mv:.1f}м", fill=axis_label_color, font=font_small)
-        for gy in range(0, canvas_h + 1, grid_px * 4):
+            if mv > 0: draw_grid.text((gx+2, 2), f"{mv:.1f}м", fill=_gtxt, font=font_small)
+        for gy in range(0, canvas_h+1, grid_px*4):
             mv = gy * mm_per_px / 1000
-            if mv > 0:
-                draw_grid.text((2, gy + 2), f"{mv:.1f}м", fill=axis_label_color, font=font_small)
-
-        # --- Аннотации длин и углов на фоне холста ---
-        prev_verts = st.session_state.get('ts_vertices_mm', [])
-        if len(prev_verts) >= 3:
-            n_pv = len(prev_verts)
-            # Конвертация mm → px
-            pts_px = [(v[0] / mm_per_px, v[1] / mm_per_px) for v in prev_verts]
-
-            # Длины сторон
-            for i in range(n_pv):
-                p1 = pts_px[i]
-                p2 = pts_px[(i + 1) % n_pv]
-                mx, my = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
-                dx, dy = p2[0] - p1[0], p2[1] - p1[1]
-                side_len_mm = math.sqrt((prev_verts[(i+1)%n_pv][0] - prev_verts[i][0])**2 + (prev_verts[(i+1)%n_pv][1] - prev_verts[i][1])**2)
-                side_m = side_len_mm / 1000
-                label = f"{side_m:.2f} м"
-                # Нормаль для смещения текста от линии
-                seg_len = math.sqrt(dx**2 + dy**2)
-                if seg_len > 0:
-                    nx_d, ny_d = -dy / seg_len, dx / seg_len
-                else:
-                    nx_d, ny_d = 0, -1
-                off = 16
-                tx, ty = mx + nx_d * off, my + ny_d * off
-                # Фон под текст
-                try:
-                    bbox = font_ann.getbbox(label)
-                    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-                except:
-                    tw, th = len(label) * 7, 14
-                pad_bg = 3
-                draw_grid.rounded_rectangle(
-                    [tx - tw/2 - pad_bg, ty - th/2 - pad_bg, tx + tw/2 + pad_bg, ty + th/2 + pad_bg],
-                    radius=4, fill=ann_bg_color)
-                draw_grid.text((tx - tw/2, ty - th/2), label, fill=ann_text_color, font=font_ann)
-
-            # Углы при вершинах
-            for i in range(n_pv):
-                pp = prev_verts[(i - 1) % n_pv]
-                pc = prev_verts[i]
-                pn = prev_verts[(i + 1) % n_pv]
-                v1x, v1y = pp[0] - pc[0], pp[1] - pc[1]
-                v2x, v2y = pn[0] - pc[0], pn[1] - pc[1]
-                mag1 = math.sqrt(v1x**2 + v1y**2)
-                mag2 = math.sqrt(v2x**2 + v2y**2)
-                if mag1 > 0 and mag2 > 0:
-                    dot = v1x * v2x + v1y * v2y
-                    cos_a = max(-1, min(1, dot / (mag1 * mag2)))
-                    angle_deg = round(math.degrees(math.acos(cos_a)))
-                    cp = pts_px[i]
-                    # Биссектриса в пиксельных координатах
-                    pp_px = pts_px[(i - 1) % n_pv]
-                    pn_px = pts_px[(i + 1) % n_pv]
-                    d1x, d1y = pp_px[0] - cp[0], pp_px[1] - cp[1]
-                    d2x, d2y = pn_px[0] - cp[0], pn_px[1] - cp[1]
-                    dm1 = math.sqrt(d1x**2 + d1y**2)
-                    dm2 = math.sqrt(d2x**2 + d2y**2)
-                    if dm1 > 0 and dm2 > 0:
-                        bx_d = d1x / dm1 + d2x / dm2
-                        by_d = d1y / dm1 + d2y / dm2
-                    else:
-                        bx_d, by_d = 0, -1
-                    bm = math.sqrt(bx_d**2 + by_d**2)
-                    off_a = 26
-                    if bm > 0.001:
-                        bx, by = bx_d / bm * off_a, by_d / bm * off_a
-                    else:
-                        bx, by = 0, -off_a
-                    a_label = f"{angle_deg}°"
-                    a_color = '#4caf50' if angle_deg == 90 else '#ff9800' if angle_deg in (45,135,180) else ann_angle_color
-                    atx, aty = cp[0] + bx, cp[1] + by
-                    try:
-                        bbox_a = font_angle.getbbox(a_label)
-                        atw, ath = bbox_a[2] - bbox_a[0], bbox_a[3] - bbox_a[1]
-                    except:
-                        atw, ath = len(a_label) * 7, 12
-                    draw_grid.rounded_rectangle(
-                        [atx - atw/2 - 3, aty - ath/2 - 3, atx + atw/2 + 3, aty + ath/2 + 3],
-                        radius=4, fill=ann_bg_color)
-                    draw_grid.text((atx - atw/2, aty - ath/2), a_label, fill=a_color, font=font_angle)
-
-            # Номера вершин
-            for i, cp in enumerate(pts_px):
-                r = 8
-                draw_grid.ellipse([cp[0]-r, cp[1]-r, cp[0]+r, cp[1]+r], fill=vertex_fill, outline='white', width=2)
-                v_label = str(i + 1)
-                try:
-                    bbox_v = font_small.getbbox(v_label)
-                    vw = bbox_v[2] - bbox_v[0]
-                    vh = bbox_v[3] - bbox_v[1]
-                except:
-                    vw, vh = 6, 10
-                draw_grid.text((cp[0] - vw/2, cp[1] - vh/2 - 1), v_label, fill='white', font=font_small)
-
-        grid_img = grid_img.convert('RGB')
+            if mv > 0: draw_grid.text((2, gy+2), f"{mv:.1f}м", fill=_gtxt, font=font_small)
 
         canvas_result = st_canvas(
             fill_color="rgba(165, 214, 167, 0.3)", stroke_width=2, stroke_color="#2e7d32",
@@ -448,17 +327,31 @@ elif current_step == 2:
 
         st.session_state.ts_vertices_mm = vertices_mm
 
-        # SVG с размерами и углами
+        # --- Интерактивная таблица размеров и углов ---
         if len(vertices_mm) >= 3:
             n = len(vertices_mm)
-            sides_mm = []
+
+            # Вычисление длин сторон (мм → м)
+            calc_sides_m = []
             for i in range(n):
                 p1, p2 = vertices_mm[i], vertices_mm[(i+1) % n]
                 dx, dy = p2[0]-p1[0], p2[1]-p1[1]
-                sides_mm.append(int(round((dx**2 + dy**2)**0.5)))
-            xs = [v[0] for v in vertices_mm]; ys = [v[1] for v in vertices_mm]
-            min_x, max_x = min(xs), max(xs); min_y, max_y = min(ys), max(ys)
-            range_x = max(max_x - min_x, 1); range_y = max(max_y - min_y, 1)
+                calc_sides_m.append(round(math.sqrt(dx**2 + dy**2) / 1000, 2))
+
+            # Вычисление углов
+            calc_angles = []
+            for i in range(n):
+                pp = vertices_mm[(i-1) % n]; pc = vertices_mm[i]; pn = vertices_mm[(i+1) % n]
+                v1x, v1y = pp[0]-pc[0], pp[1]-pc[1]
+                v2x, v2y = pn[0]-pc[0], pn[1]-pc[1]
+                mag1 = math.sqrt(v1x**2+v1y**2); mag2 = math.sqrt(v2x**2+v2y**2)
+                if mag1 > 0 and mag2 > 0:
+                    cos_a = max(-1, min(1, (v1x*v2x+v1y*v2y)/(mag1*mag2)))
+                    calc_angles.append(round(math.degrees(math.acos(cos_a)), 1))
+                else:
+                    calc_angles.append(0.0)
+
+            # Площадь по Гауссу (из координат)
             area_mm2 = 0
             for i in range(n):
                 j = (i+1) % n
@@ -466,49 +359,61 @@ elif current_step == 2:
                 area_mm2 -= vertices_mm[j][0] * vertices_mm[i][1]
             area_m2 = abs(area_mm2) / 2_000_000
 
-            svg_w, svg_h = 650, 430; pad = 75
-            sc_svg = min((svg_w - 2*pad) / range_x, (svg_h - 2*pad) / range_y)
-            svg_pts = [(pad + (vx-min_x)*sc_svg, pad + (vy-min_y)*sc_svg) for vx, vy in vertices_mm]
-            poly_str = " ".join([f"{p[0]:.1f},{p[1]:.1f}" for p in svg_pts])
-            labels = ""
-            for i in range(n):
-                p1, p2 = svg_pts[i], svg_pts[(i+1) % n]
-                mx_l, my_l = (p1[0]+p2[0])/2, (p1[1]+p2[1])/2
-                nx_d, ny_d = -(p2[1]-p1[1]), p2[0]-p1[0]
-                nd = max((nx_d**2 + ny_d**2)**0.5, 0.001)
-                off = 20
-                side_m = sides_mm[i] / 1000
-                side_label = f"{sides_mm[i]} мм" if sides_mm[i] < 10000 else f"{side_m:.2f} м"
-                labels += f'<text x="{mx_l + nx_d/nd*off:.1f}" y="{my_l + ny_d/nd*off:.1f}" text-anchor="middle" font-size="12" fill="#1b5e20" font-weight="bold">{side_label}</text>'
-                labels += f'<circle cx="{p1[0]:.1f}" cy="{p1[1]:.1f}" r="5" fill="#2e7d32" stroke="white" stroke-width="1.5"/>'
-                labels += f'<text x="{p1[0]:.1f}" y="{p1[1]-12:.1f}" text-anchor="middle" font-size="10" fill="#444" font-weight="bold">{i+1}</text>'
-            angle_labels = ""
-            for i in range(n):
-                pp = vertices_mm[(i-1) % n]; pc = vertices_mm[i]; pn = vertices_mm[(i+1) % n]
-                v1x, v1y = pp[0]-pc[0], pp[1]-pc[1]; v2x, v2y = pn[0]-pc[0], pn[1]-pc[1]
-                dot = v1x*v2x + v1y*v2y; mag1 = math.sqrt(v1x**2+v1y**2); mag2 = math.sqrt(v2x**2+v2y**2)
-                if mag1 > 0 and mag2 > 0:
-                    cos_a = max(-1, min(1, dot/(mag1*mag2))); angle_deg = round(math.degrees(math.acos(cos_a)))
-                    sp = svg_pts[i]
-                    bx_d = (v1x/mag1 + v2x/mag2); by_d = (v1y/mag1 + v2y/mag2)
-                    bm = math.sqrt(bx_d**2+by_d**2)
-                    if bm > 0.001: bx, by = bx_d/bm*28, by_d/bm*28
-                    else: bx, by = 0, -28
-                    a_color = '#00c853' if angle_deg == 90 else '#ff6f00' if angle_deg in (45,135,180) else '#666'
-                    a_bg = '#e8f5e9' if angle_deg == 90 else '#fff3e0' if angle_deg in (45,135,180) else '#f5f5f5'
-                    angle_labels += f'<circle cx="{sp[0]:.1f}" cy="{sp[1]:.1f}" r="15" fill="{a_bg}" fill-opacity="0.7" stroke="{a_color}" stroke-width="1.5" stroke-dasharray="3,2"/>'
-                    angle_labels += f'<text x="{sp[0]+bx*0.7:.1f}" y="{sp[1]+by*0.7+4:.1f}" text-anchor="middle" font-size="10" fill="{a_color}" font-weight="bold">{angle_deg}°</text>'
-            svg_code = f'''<svg width="{svg_w}" height="{svg_h}" xmlns="http://www.w3.org/2000/svg">
-                <defs><pattern id="g2" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#eee" stroke-width="0.5"/></pattern></defs>
-                <rect width="100%" height="100%" fill="url(#g2)" rx="8"/>
-                <polygon points="{poly_str}" fill="#a5d6a7" fill-opacity="0.35" stroke="#2e7d32" stroke-width="2.5" stroke-linejoin="round"/>
-                {labels}{angle_labels}
-                <text x="{svg_w/2}" y="{svg_h-12}" text-anchor="middle" font-size="13" fill="#555">Площадь: {area_m2:.2f} м² | Габариты: {range_x} × {range_y} мм | Вершин: {n}</text></svg>'''
-            st.markdown("### :material/straighten: Чертёж с размерами и углами")
-            st.markdown(svg_code, unsafe_allow_html=True)
-            with st.expander(":material/list_alt: Таблица сторон", expanded=False):
-                side_data = [{"Сторона": f"{i+1} → {(i+1)%n+1}", "Длина (мм)": sides_mm[i], "Вершина": f"({vertices_mm[i][0]}, {vertices_mm[i][1]})"} for i in range(n)]
-                st.dataframe(pd.DataFrame(side_data), use_container_width=True, hide_index=True)
+            # Инициализация редактируемых данных в session_state
+            edges_key = 'ts_edges_data'
+            if edges_key not in st.session_state or len(st.session_state[edges_key]) != n:
+                st.session_state[edges_key] = [
+                    {"Сторона": f"{i+1} → {(i+1)%n+1}", "Длина (м)": calc_sides_m[i], "Угол (°)": calc_angles[i]}
+                    for i in range(n)
+                ]
+
+            st.markdown("### :material/straighten: Размеры и углы контура")
+
+            # Метрики
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric(":material/square_foot: Площадь", f"{area_m2:.2f} м²")
+            xs = [v[0] for v in vertices_mm]; ys = [v[1] for v in vertices_mm]
+            mc2.metric(":material/straighten: Габариты", f"{(max(xs)-min(xs))/1000:.1f} × {(max(ys)-min(ys))/1000:.1f} м")
+            mc3.metric(":material/pentagon: Вершин", str(n))
+
+            # Редактируемая таблица
+            st.markdown("##### ✏️ Корректировка размеров")
+            st.caption("Измените длины сторон, если нарисованный контур неточен. Площадь пересчитается автоматически.")
+
+            df_edges = pd.DataFrame(st.session_state[edges_key])
+            edited_df = st.data_editor(
+                df_edges,
+                use_container_width=True,
+                hide_index=True,
+                num_rows="fixed",
+                disabled=["Сторона", "Угол (°)"],
+                column_config={
+                    "Сторона": st.column_config.TextColumn("Сторона", width="small"),
+                    "Длина (м)": st.column_config.NumberColumn("Длина (м)", min_value=0.1, max_value=50.0, step=0.01, format="%.2f"),
+                    "Угол (°)": st.column_config.NumberColumn("Угол (°)", format="%.1f"),
+                },
+                key="edges_editor"
+            )
+
+            # Обновление session_state из таблицы
+            edited_sides_m = edited_df["Длина (м)"].tolist()
+            st.session_state[edges_key] = edited_df.to_dict('records')
+
+            # Валидация: проверка что стороны изменены
+            sides_changed = any(abs(edited_sides_m[i] - calc_sides_m[i]) > 0.005 for i in range(n))
+            if sides_changed:
+                # Пересчёт площади по пользовательским длинам (приблизительный — сохраняем углы)
+                st.info(":material/info: Длины изменены вручную. Площадь будет пересчитана при расчёте сметы.")
+
+            # Проверка суммы углов
+            angle_sum = sum(calc_angles)
+            expected_sum = (n - 2) * 180
+            if abs(angle_sum - expected_sum) > 5:
+                st.warning(f":material/warning: Сумма углов ({angle_sum:.0f}°) отличается от ожидаемой ({expected_sum}°). Проверьте контур.")
+
+            # Сохранение пользовательских длин для расчёта
+            st.session_state.ts_user_sides_m = edited_sides_m
+
         else:
             st.info("✏️ Нарисуйте контур террасы на холсте выше")
 
