@@ -1,3 +1,4 @@
+# v3.1 — Canvas annotations
 import streamlit as st
 st.set_page_config(page_title="Дача 2000 | Умный Калькулятор", layout="wide", initial_sidebar_state="collapsed")
 import os
