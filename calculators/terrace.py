@@ -6,14 +6,13 @@ import json
 from PIL import Image as PILImage, ImageDraw
 
 import math
-def get_row_patterns(length, M):
+def get_row_patterns(length, M, min_cut_length=0.3, min_stagger=0.4):
     """
     Генерирует два чередующихся паттерна раскладки досок.
     length — длина ряда (м), M — длина целой доски (м).
     Возвращает (row_A, row_B) — два списка длин кусков.
     """
     length = round(length, 3)
-    MIN_STAGGER = 1.0  # Минимальная разбежка швов (визуальная красота)
     
     if length <= 0.01:
         return [], []
@@ -30,7 +29,7 @@ def get_row_patterns(length, M):
     if abs(R) < 0.001:
         row_A = [M] * K
         half = round(M / 2.0, 3)
-        if half >= MIN_CUT_LENGTH and K > 1:
+        if half >= min_cut_length and K > 1:
             row_B = [half] + [M] * (K - 1) + [half]
         else:
             # Половина доски слишком коротка — без разбежки
@@ -39,7 +38,7 @@ def get_row_patterns(length, M):
 
     # ─── СЛУЧАЙ 2: Асимметричная разбежка (например, 4-4-2 и 2-4-4) ───
     # Применяем только если остаток допустим И визуальная разбежка швов (M - R) достаточно большая
-    if R >= MIN_CUT_LENGTH and abs(M - R) >= MIN_STAGGER:
+    if R >= min_cut_length and abs(M - R) >= min_stagger:
         row_A = [M] * K + [R]       # целые доски + остаток справа
         row_B = [R] + [M] * K       # остаток слева + целые доски
         return row_A, row_B
@@ -72,14 +71,14 @@ def get_row_patterns(length, M):
     return [length], [length]
 
 
-def get_1d_symmetric_pieces(L, M):
+def get_1d_symmetric_pieces(L, M, min_cut_length=0.3, min_stagger=0.4):
     """Нарезка торцевой доски с сохранением ритма"""
     if L <= 0.01: return []
-    row_A, _ = get_row_patterns(L, M)
+    row_A, _ = get_row_patterns(L, M, min_cut_length, min_stagger)
     return row_A
 
 
-def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards):
+def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards, min_cut_length=0.3, min_stagger=0.4):
     """
     Перебирает все типоразмеры досок в коллекции и выбирает тот,
     который даёт минимальную стоимость (= минимальную обрезь).
@@ -98,7 +97,7 @@ def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards):
             if L <= 0.01:
                 layout_matrix.append([])
                 continue
-            row_A, row_B = get_row_patterns(L, M)
+            row_A, row_B = get_row_patterns(L, M, min_cut_length, min_stagger)
             current_row = row_A if r % 2 == 0 else row_B
             layout_matrix.append(current_row)
             # Собираем координаты стыков для парных лаг
