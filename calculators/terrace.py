@@ -4,7 +4,8 @@ import re
 from streamlit_drawable_canvas import st_canvas
 import json
 from PIL import Image as PILImage, ImageDraw
-
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import math
 def get_row_patterns(length, M, min_cut_length=0.3, min_stagger=0.4):
     """

@@ -929,10 +929,10 @@ elif current_step == 5:
             if manager_name or manager_phone: pdf.cell(200, 10, txt=f"Менеджер: {manager_name} {manager_phone}", ln=True, align='L')
             pdf.ln(5)
             pdf.set_fill_color(235, 235, 235); pdf.cell(110, 10, "Материалы", 1, 0, 'L', True); pdf.cell(30, 10, "Кол-во", 1, 0, 'C', True); pdf.cell(50, 10, "Сумма", 1, 1, 'C', True)
-            for r in mat_data: pdf.cell(110, 10, str(r["Позиция"])[:45], 1); pdf.cell(30, 10, str(r["Кол-во"]), 1, 0, 'C'); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.", 1, 1, 'R')
+            for r in mat_data: pdf.cell(110, 10, str(r["Позиция"])[:45], 1); pdf.cell(30, 10, str(r["Кол-во"]), 1, 0, 'C'); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.".replace(",", " "), 1, 1, 'R')
             pdf.ln(5); pdf.cell(140, 10, "Работы", 1, 0, 'L', True); pdf.cell(50, 10, "Сумма", 1, 1, 'C', True)
-            for r in work_data: pdf.cell(140, 10, str(r["Позиция"]), 1); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.", 1, 1, 'R')
-            pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.", ln=True, align='R')
+            for r in work_data: pdf.cell(140, 10, str(r["Позиция"]), 1); pdf.cell(50, 10, f"{r['Сумма']:,.0f} р.".replace(",", " "), 1, 1, 'R')
+            pdf.ln(5); pdf.set_font('DejaVu', '', 14); pdf.cell(190, 10, txt=f"ИТОГО: {grand_total:,.0f} руб.".replace(",", " "), ln=True, align='R')
             pdf.add_page(); pdf.set_font('DejaVu', '', 14); pdf.set_fill_color(0, 184, 148); pdf.set_text_color(255, 255, 255)
             pdf.cell(190, 12, 'Почему выбирают ООО «Дача 2000»:', ln=True, align='C', fill=True)
             pdf.set_text_color(0, 0, 0); pdf.set_font('DejaVu', '', 11); pdf.ln(8)
@@ -974,8 +974,14 @@ elif current_step == 5:
         st.markdown("<br>", unsafe_allow_html=True)
 
     colA, colB = st.columns(2)
-    colA.markdown("#### :material/inventory: Смета материалов"); colA.table(mat_data)
-    colB.markdown("#### :material/construction: Смета работ"); colB.table(work_data)
+    with colA:
+        st.markdown("#### :material/inventory: Смета материалов")
+        st.dataframe(mat_data, hide_index=True, use_container_width=True, 
+                     column_config={"Сумма": st.column_config.NumberColumn(format="%.0f ₽")})
+    with colB:
+        st.markdown("#### :material/construction: Смета работ")
+        st.dataframe(work_data, hide_index=True, use_container_width=True,
+                     column_config={"Сумма": st.column_config.NumberColumn(format="%.0f ₽")})
 
     col_dl1, col_dl2, col_dl3 = st.columns([1, 2, 1])
     with col_dl2:
