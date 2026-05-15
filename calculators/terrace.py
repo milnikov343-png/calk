@@ -1,6 +1,5 @@
 import datetime
 import pandas as pd
-# Force redeploy for Streamlit Cloud
 import re
 from streamlit_drawable_canvas import st_canvas
 import json
@@ -8,6 +7,9 @@ from PIL import Image as PILImage, ImageDraw
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import math
+from itertools import combinations_with_replacement
+
+
 def get_row_patterns(length, M, min_cut_length=0.3, min_stagger=0.4):
     """
     Генерирует два чередующихся паттерна раскладки досок.
@@ -15,7 +17,7 @@ def get_row_patterns(length, M, min_cut_length=0.3, min_stagger=0.4):
     Возвращает (row_A, row_B) — два списка длин кусков.
     """
     length = round(length, 3)
-    
+
     if length <= 0.01:
         return [], []
 
@@ -27,30 +29,23 @@ def get_row_patterns(length, M, min_cut_length=0.3, min_stagger=0.4):
     R = round(length - K * M, 3)  # остаток
 
     # ─── СЛУЧАЙ 1: Длина делится ровно (остаток = 0) ───
-    # Пример: 9м / 3м → [3, 3, 3] и [1.5, 3, 3, 1.5]
     if abs(R) < 0.001:
         row_A = [M] * K
         half = round(M / 2.0, 3)
         if half >= min_cut_length and K > 1:
             row_B = [half] + [M] * (K - 1) + [half]
         else:
-            # Половина доски слишком коротка — без разбежки
             row_B = list(row_A)
         return row_A, row_B
 
-    # ─── СЛУЧАЙ 2: Асимметричная разбежка (например, 4-4-2 и 2-4-4) ───
-    # Применяем только если остаток допустим И визуальная разбежка швов (M - R) достаточно большая
+    # ─── СЛУЧАЙ 2: Асимметричная разбежка ───
     if R >= min_cut_length and abs(M - R) >= min_stagger:
-        row_A = [M] * K + [R]       # целые доски + остаток справа
-        row_B = [R] + [M] * K       # остаток слева + целые доски
+        row_A = [M] * K + [R]
+        row_B = [R] + [M] * K
         return row_A, row_B
 
-    # ─── СЛУЧАЙ 3: Полная симметрия (огрызок или слишком мелкая разбежка) ───
-    # Если мы попали сюда, значит асимметричный вариант даст либо огрызок (R < 1),
-    # либо некрасивый мелкий шов (например, разбежка всего 30 см).
-    # Решение: ищем симметричные ряды с равномерной подрезкой краев.
+    # ─── СЛУЧАЙ 3: Полная симметрия ───
     valid_rows = []
-    # Ищем все возможные симметричные ряды, от максимального кол-ва целых досок к минимальному
     for k in range(K, -1, -1):
         rem = round(length - k * M, 3)
         e = round(rem / 2.0, 3)
@@ -62,7 +57,6 @@ def get_row_patterns(length, M, min_cut_length=0.3, min_stagger=0.4):
     elif len(valid_rows) == 1:
         row_A = valid_rows[0]
         e = row_A[0]
-        # Искусственно сдвигаем доски для второго ряда, чтобы была разбежка
         shift = round(min(M - e, e - 1.0, M / 4.0), 3)
         if shift >= 0.2:
             row_B = [round(e + shift, 3)] + [M] * (len(row_A) - 2) + [round(e - shift, 3)]
@@ -80,14 +74,96 @@ def get_1d_symmetric_pieces(L, M, min_cut_length=0.3, min_stagger=0.4):
     return row_A
 
 
+# ─── Генерация смешанных симметричных паттернов ───
+
+def _gen_mixed_patterns(L, board_lengths, min_cut_length=0.3):
+    """
+    Генерация симметричных паттернов с использованием досок разных длин.
+    Возвращает список паттернов, отсортированных по качеству симметрии.
+    """
+    L = round(L, 3)
+    if L <= 0.01:
+        return []
+    lengths = sorted(set(round(b, 3) for b in board_lengths), reverse=True)
+    max_l = max(lengths)
+
+    if L <= max_l:
+        return [[round(L, 3)]]
+
+    candidates = []  # (pattern, penalty)
+    max_n = min(int(L / min(lengths)) + 1, 6)
+
+    for n in range(1, max_n + 1):
+        for combo in combinations_with_replacement(lengths, n):
+            middle_sum = round(sum(combo), 3)
+            if middle_sum > L + 0.001:
+                continue
+            remainder = round(L - middle_sum, 3)
+
+            if abs(remainder) < 0.001:
+                # Целые доски заполняют ряд полностью
+                pattern = list(combo)
+                is_sym = (pattern == pattern[::-1])
+                penalty = 0.0 if is_sym else 50.0
+                penalty += len(pattern) * 0.01
+                candidates.append((pattern, penalty))
+            else:
+                edge = round(remainder / 2.0, 3)
+                if edge >= min_cut_length:
+                    pattern = [edge] + list(combo) + [edge]
+                    # Всегда зеркально-симметричный
+                    min_piece = min(pattern)
+                    penalty = 0.0
+                    if min_piece < max_l * 0.2:
+                        penalty += (max_l * 0.2 - min_piece) * 5
+                    penalty += len(pattern) * 0.01
+                    candidates.append((pattern, penalty))
+
+    candidates.sort(key=lambda x: (x[1], len(x[0])))
+    return [c[0] for c in candidates]
+
+
+def _pick_staggered_pair(candidates, L):
+    """
+    Из списка кандидатов выбирает пару (row_A, row_B) с максимальной разбежкой стыков.
+    """
+    if not candidates:
+        return [L], [L]
+    if len(candidates) == 1:
+        return candidates[0], candidates[0]
+
+    def joints_of(row):
+        j = set()
+        x = 0
+        for p in row[:-1]:
+            x = round(x + p, 3)
+            j.add(x)
+        return j
+
+    row_A = candidates[0]
+    joints_A = joints_of(row_A)
+
+    best_B = candidates[1] if len(candidates) > 1 else row_A
+    best_overlap = len(joints_A)
+
+    for cand in candidates[1:20]:  # проверяем топ-20
+        overlap = len(joints_A & joints_of(cand))
+        if overlap < best_overlap:
+            best_overlap = overlap
+            best_B = cand
+            if overlap == 0:
+                break
+
+    return row_A, best_B
+
+
 def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards,
                                min_cut_length=0.3, min_stagger=0.4,
                                mode='economy'):
     """
     Перебирает все типоразмеры досок в коллекции и выбирает оптимальный.
-    mode='economy'   — минимизация общей стоимости (с учётом отходов).
-    mode='symmetric' — приоритет красивой симметричной раскладки (нулевые отходы),
-                       затем минимальное число досок.
+    mode='economy'   — минимизация общей стоимости (один типоразмер).
+    mode='symmetric' — красивая симметричная раскладка (смешанные длины из коллекции).
     """
     best_cost = float('inf')
     best_waste = float('inf')
@@ -96,79 +172,118 @@ def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards,
     best_joints = None
     best_base_board = None
 
-    for base_board in collection_boards:
-        M = base_board['length_m']
+    if mode == 'symmetric':
+        # ─── Симметричный режим: смешанные доски ───
+        board_lengths = [b['length_m'] for b in collection_boards]
+        boards_by_cpm = sorted(collection_boards, key=lambda b: b['board_cost'] / b['length_m'])
+
+        # Для каждого уникального L строим смешанные паттерны
+        unique_lengths = {}
+        for L in row_lengths_arr:
+            L_key = round(L, 3)
+            if L_key not in unique_lengths and L_key > 0.01:
+                pats = _gen_mixed_patterns(L_key, board_lengths, min_cut_length)
+                row_A, row_B = _pick_staggered_pair(pats, L_key)
+                unique_lengths[L_key] = (row_A, row_B)
 
         layout_matrix = []
         joints = set()
         for r, L in enumerate(row_lengths_arr):
-            if L <= 0.01:
+            L_key = round(L, 3)
+            if L_key <= 0.01:
                 layout_matrix.append([])
                 continue
-            row_A, row_B = get_row_patterns(L, M, min_cut_length, min_stagger)
+            row_A, row_B = unique_lengths[L_key]
             current_row = row_A if r % 2 == 0 else row_B
             layout_matrix.append(current_row)
-            # Собираем координаты стыков для парных лаг
             jx = 0
             for p in current_row[:-1]:
                 jx = round(jx + p, 3)
                 joints.add(jx)
 
-        # Оптимизация нарезки: bin-packing (First Fit Decreasing)
-        # Обрезки от одного ряда используются в другом для экономии
+        # Bin-packing с мультиразмерными досками
         flat_pieces = sorted([p for row in layout_matrix for p in row], reverse=True)
-        bins = []
+        bins = []  # list of (board_dict, used_float)
         for p in flat_pieces:
             placed = False
-            bins.sort(key=lambda b: M - b)
-            for i in range(len(bins)):
-                if round(M - bins[i], 3) >= p:
-                    bins[i] = round(bins[i] + p, 3)
-                    placed = True
-                    break
+            # Best-fit в существующий бин
+            best_idx = -1
+            best_rem = float('inf')
+            for i, (brd, used) in enumerate(bins):
+                rem = round(brd['length_m'] - used, 3)
+                if rem >= p and rem < best_rem:
+                    best_idx = i
+                    best_rem = rem
+            if best_idx >= 0:
+                brd, used = bins[best_idx]
+                bins[best_idx] = (brd, round(used + p, 3))
+                placed = True
             if not placed:
-                bins.append(p)
+                for brd in boards_by_cpm:
+                    if brd['length_m'] >= p:
+                        bins.append((brd, round(p, 3)))
+                        placed = True
+                        break
+                if not placed:
+                    bins.append((boards_by_cpm[-1], round(p, 3)))
 
-        waste_m = sum(round(M - b, 3) for b in bins)
-        total_cost = len(bins) * base_board['board_cost']
-        cost_per_m = base_board['board_cost'] / M if M > 0 else 0
+        total_cost = sum(brd['board_cost'] for brd, used in bins)
+        waste_m = sum(round(brd['length_m'] - used, 3) for brd, used in bins)
 
-        if mode == 'symmetric':
-            # Симметричный режим: оценка визуальной красоты раскладки.
-            # Критерии (от важного к менее важному):
-            # 1. Симметрия ряда: первый кусок == последний кусок
-            # 2. Нет огрызков (все куски >= 30% от длины доски)
-            # 3. Меньше стыков (меньше кусков в ряде)
-            # 4. При равной красоте — меньше стоимость
+        # Подсчёт использованных досок по типоразмерам
+        board_counts = {}
+        for brd, used in bins:
+            nm = brd['name']
+            if nm not in board_counts:
+                board_counts[nm] = {'qty': 0, 'sum': 0, 'board': brd}
+            board_counts[nm]['qty'] += 1
+            board_counts[nm]['sum'] += brd['board_cost']
 
-            sym_penalty = 0.0
-            for row in layout_matrix:
-                if len(row) < 2:
+        # main_board — самая длинная доска (для чертежей и торцевых)
+        best_base_board = max(collection_boards, key=lambda b: b['length_m'])
+        best_layout = layout_matrix
+        best_joints = joints
+        best_cost = total_cost
+        best_waste = waste_m
+        best_base_board = dict(best_base_board)  # копия
+        best_base_board['_mixed_counts'] = board_counts
+
+    else:
+        # ─── Эконом режим: один типоразмер, минимизация стоимости ───
+        for base_board in collection_boards:
+            M = base_board['length_m']
+            layout_matrix = []
+            joints = set()
+            for r, L in enumerate(row_lengths_arr):
+                if L <= 0.01:
+                    layout_matrix.append([])
                     continue
-                # Штраф за асимметрию (первый != последний)
-                diff = abs(row[0] - row[-1])
-                if diff > 0.01:
-                    sym_penalty += diff * 10  # сильный штраф
-                # Штраф за короткие огрызки (< 30% от доски)
-                min_piece = min(row)
-                if min_piece < M * 0.3:
-                    sym_penalty += (M * 0.3 - min_piece) * 5
-                # Штраф за количество кусков (больше кусков = больше стыков)
-                sym_penalty += len(row) * 0.01
+                row_A, row_B = get_row_patterns(L, M, min_cut_length, min_stagger)
+                current_row = row_A if r % 2 == 0 else row_B
+                layout_matrix.append(current_row)
+                jx = 0
+                for p in current_row[:-1]:
+                    jx = round(jx + p, 3)
+                    joints.add(jx)
 
-            # Сравнение: (штраф_симметрии, стоимость) — чем меньше, тем лучше
-            current_score = (round(sym_penalty, 2), total_cost)
-            best_score = (round(best_sym_penalty, 2), best_cost)
-            if current_score < best_score:
-                best_sym_penalty = sym_penalty
-                best_cost = total_cost
-                best_waste = waste_m
-                best_layout = layout_matrix
-                best_joints = joints
-                best_base_board = base_board
-        else:
-            # Эконом режим: минимизация общей стоимости с учётом отходов
+            flat_pieces = sorted([p for row in layout_matrix for p in row], reverse=True)
+            bins = []
+            for p in flat_pieces:
+                placed = False
+                bins.sort(key=lambda b: M - b)
+                for i in range(len(bins)):
+                    if round(M - bins[i], 3) >= p:
+                        bins[i] = round(bins[i] + p, 3)
+                        placed = True
+                        break
+                if not placed:
+                    bins.append(p)
+
+            waste_m = sum(round(M - b, 3) for b in bins)
+            total_cost = len(bins) * base_board['board_cost']
+            cost_per_m = base_board['board_cost'] / M if M > 0 else 0
             effective_cost = total_cost + waste_m * cost_per_m
+
             if effective_cost < best_cost:
                 best_cost = effective_cost
                 best_waste = waste_m
@@ -177,6 +292,7 @@ def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards,
                 best_base_board = base_board
 
     return best_layout, best_joints, best_base_board
+
 
 def optimize_waste(pieces_list, allowed_board):
     pieces_list = sorted(pieces_list, reverse=True)
@@ -191,10 +307,11 @@ def optimize_waste(pieces_list, allowed_board):
                 break
         if not placed:
             bins.append({"board": allowed_board, "used": p})
-            
+
     qty = len(bins)
     sum_cost = qty * allowed_board['board_cost']
     return {allowed_board['name']: {"qty": qty, "sum": sum_cost, "unit": allowed_board['unit']}}
+
 
 def get_shifted_edge(matrix, is_front_or_left, offset_start, offset_end):
     if not matrix: return []
@@ -204,6 +321,7 @@ def get_shifted_edge(matrix, is_front_or_left, offset_start, offset_end):
     if len(p) == 1: p[0] = round(p[0] + offset_start + offset_end, 2)
     else: p[0] = round(p[0] + offset_start, 2); p[-1] = round(p[-1] + offset_end, 2)
     return p
+
 
 # --- Отрисовка торцевой доски под 45 градусов ---
 def draw_edge(ax, pieces, side, L, W, ew, flags):
@@ -226,9 +344,10 @@ def draw_edge(ax, pieces, side, L, W, ew, flags):
             pts = [[L, xs], [L, xe], [L - ew, xe], [L - ew, xs]]
             if xs == 0 and flags['F']: pts[3][1] = ew
             if round(xe,2) >= round(W,2) and flags['B']: pts[2][1] = W - ew
-            
+
         ax.add_patch(patches.Polygon(pts, color='#5d4037', ec='black', lw=1.2))
         cur += p
+
 
 # --- Геометрия для нестандартных полигонов ---
 def point_in_polygon(x, y, vertices):
@@ -244,8 +363,9 @@ def point_in_polygon(x, y, vertices):
         j = i
     return inside
 
+
 def polygon_row_segments(vertices, y):
-    """Scanline: горизонтальные отрезки полигона на высоте y. Возвращает [(x_start, x_end), ...]."""
+    """Scanline: горизонтальные отрезки полигона на высоте y."""
     intersections = []
     n = len(vertices)
     for i in range(n):
@@ -263,5 +383,3 @@ def polygon_row_segments(vertices, y):
         if intersections[i + 1] - intersections[i] > 0.001:
             segments.append((intersections[i], intersections[i + 1]))
     return segments
-
-# Layout modes: symmetric / economy — v2

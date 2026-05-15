@@ -642,7 +642,10 @@ elif current_step == 5:
         M = main_board['length_m']
 
         main_pieces = [p for row in layout_matrix for p in row]
-        board_main_totals = optimize_waste(main_pieces, main_board) if main_pieces else {}
+        if '_mixed_counts' in main_board and main_pieces:
+            board_main_totals = {nm: {"qty": d['qty'], "sum": d['sum'], "unit": d['board']['unit']} for nm, d in main_board['_mixed_counts'].items()}
+        else:
+            board_main_totals = optimize_waste(main_pieces, main_board) if main_pieces else {}
         board_edge_totals = {}
 
         extra_joists = len(best_joints) * 2
@@ -808,7 +811,10 @@ elif current_step == 5:
             front_pieces = back_pieces = left_pieces = right_pieces = []
 
         main_pieces = [p for row in layout_matrix for p in row]
-        board_main_totals = optimize_waste(main_pieces, main_board) if main_pieces else {}
+        if '_mixed_counts' in main_board and main_pieces:
+            board_main_totals = {nm: {"qty": d['qty'], "sum": d['sum'], "unit": d['board']['unit']} for nm, d in main_board['_mixed_counts'].items()}
+        else:
+            board_main_totals = optimize_waste(main_pieces, main_board) if main_pieces else {}
         board_edge_totals = optimize_waste(edge_pieces, main_board) if edge_pieces else {}
 
         extra_joists = len(best_joints) * 2
