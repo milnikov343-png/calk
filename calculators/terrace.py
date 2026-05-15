@@ -91,6 +91,7 @@ def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards,
     """
     best_cost = float('inf')
     best_waste = float('inf')
+    best_sym_penalty = float('inf')
     best_layout = None
     best_joints = None
     best_base_board = None
@@ -133,10 +134,35 @@ def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards,
         cost_per_m = base_board['board_cost'] / M if M > 0 else 0
 
         if mode == 'symmetric':
-            # Симметричный режим: сначала минимум отходов, потом минимум стоимости
-            if waste_m < best_waste or (abs(waste_m - best_waste) < 0.01 and total_cost < best_cost):
-                best_waste = waste_m
+            # Симметричный режим: оценка визуальной красоты раскладки.
+            # Критерии (от важного к менее важному):
+            # 1. Симметрия ряда: первый кусок == последний кусок
+            # 2. Нет огрызков (все куски >= 30% от длины доски)
+            # 3. Меньше стыков (меньше кусков в ряде)
+            # 4. При равной красоте — меньше стоимость
+
+            sym_penalty = 0.0
+            for row in layout_matrix:
+                if len(row) < 2:
+                    continue
+                # Штраф за асимметрию (первый != последний)
+                diff = abs(row[0] - row[-1])
+                if diff > 0.01:
+                    sym_penalty += diff * 10  # сильный штраф
+                # Штраф за короткие огрызки (< 30% от доски)
+                min_piece = min(row)
+                if min_piece < M * 0.3:
+                    sym_penalty += (M * 0.3 - min_piece) * 5
+                # Штраф за количество кусков (больше кусков = больше стыков)
+                sym_penalty += len(row) * 0.01
+
+            # Сравнение: (штраф_симметрии, стоимость) — чем меньше, тем лучше
+            current_score = (round(sym_penalty, 2), total_cost)
+            best_score = (round(best_sym_penalty, 2), best_cost)
+            if current_score < best_score:
+                best_sym_penalty = sym_penalty
                 best_cost = total_cost
+                best_waste = waste_m
                 best_layout = layout_matrix
                 best_joints = joints
                 best_base_board = base_board
