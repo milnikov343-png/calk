@@ -43,6 +43,20 @@ MIN_CUT_LENGTH = 1.0  # Минимальная допустимая длина �
 
 from calculators.terrace import get_row_patterns, get_1d_symmetric_pieces, get_best_symmetric_layout, get_custom_length_layout, consolidate_lengths, round_up_to_custom, optimize_waste, get_shifted_edge, draw_edge, point_in_polygon, polygon_row_segments
 
+# --- Сохранение состояния между шагами (обход очистки Streamlit) ---
+if 'ts_data' not in st.session_state:
+    st.session_state.ts_data = {}
+
+# Сохраняем все текущие значения виджетов в ts_data
+for k in list(st.session_state.keys()):
+    if k.startswith('ts_'):
+        st.session_state.ts_data[k] = st.session_state[k]
+
+# Восстанавливаем сохраненные значения (если Streamlit их удалил)
+for k, v in st.session_state.ts_data.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
 # --- Тема оформления ---
 from theme import apply_theme
 theme = apply_theme()
