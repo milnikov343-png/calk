@@ -484,14 +484,30 @@ def get_custom_length_layout(row_lengths_arr, eff_w, custom_boards, mode='symmet
             layout_matrix.append([])
             continue
             
-        if L <= M:
-            row_A = [L]
-            row_B = [L]
-        else:
-            if mode == 'symmetric':
-                row_A, row_B = get_row_patterns(L, M)
+        if mode == 'symmetric':
+            if L <= M:
+                row_A = [L]
+                row_B = [L]
             else:
-                # Эконом: бьём на куски по максимальной длине M (обычно 6м) + остаток
+                import math
+                n_A = math.ceil(L / M)
+                len_A = round(L / n_A, 3)
+                
+                row_A = [len_A] * (n_A - 1)
+                row_A.append(round(L - sum(row_A), 3))
+                
+                half_A = round(len_A / 2.0, 3)
+                if n_A == 1:
+                    row_B = [half_A, round(L - half_A, 3)]
+                else:
+                    row_B = [half_A] + [len_A] * (n_A - 1)
+                    row_B.append(round(L - sum(row_B), 3))
+        else:
+            # Эконом: бьём на куски по максимальной длине M (обычно 6м) + остаток
+            if L <= M:
+                row_A = [L]
+                row_B = [L]
+            else:
                 K = int(L // M)
                 rem = round(L - K * M, 3)
                 row = [M] * K
