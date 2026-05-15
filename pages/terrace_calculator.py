@@ -516,7 +516,8 @@ elif current_step == 4:
             if 'ts_collection' not in st.session_state: st.session_state.ts_collection = colls[0]
             st.selectbox("Коллекция:", colls, key='ts_collection')
             
-            if st.session_state.ts_collection in ["Террапол Практик", "Террапол Антик"]:
+            col_upper = st.session_state.ts_collection.upper()
+            if "ПРАКТИК" in col_upper or "АНТИК" in col_upper:
                 if 'ts_length_mode' not in st.session_state: st.session_state.ts_length_mode = "Складские доски"
                 st.radio("Режим заказа:", ["Складские доски", "Любая длина под заказ"], key='ts_length_mode')
             else:
@@ -606,7 +607,8 @@ elif current_step == 5:
     
     length_mode_choice = st.session_state.get('ts_length_mode', 'Складские доски')
     is_custom_length = False
-    if collection_name in ["Террапол Практик", "Террапол Антик"] and length_mode_choice == "Любая длина под заказ":
+    col_upper = collection_name.upper()
+    if ("ПРАКТИК" in col_upper or "АНТИК" in col_upper) and length_mode_choice == "Любая длина под заказ":
         is_custom_length = True
         base_price_per_m = collection_boards[0]['board_cost'] / collection_boards[0]['length_m']
         custom_boards = []
