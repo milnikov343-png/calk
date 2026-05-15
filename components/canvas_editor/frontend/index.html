@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'Inter', sans-serif; overflow: hidden; }
+  #wrap { position: relative; display: inline-block; }
+  canvas { cursor: crosshair; display: block; border-radius: 8px; }
+  #info {
+    position: absolute; bottom: 8px; left: 8px; right: 8px;
+    padding: 6px 12px; border-radius: 6px; font-size: 12px;
+    pointer-events: none; text-align: center;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="info"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@2.0.0/dist/streamlit-component-lib.min.js"></script>
+<script>
+(function() {
+  const Stl = window.Streamlit;
+  let W = 700, H = 450, gridPx = 25, mmPerPx = 20, mmPerCell = 500;
+  let isDark = true;
+  let vertices = [];  // in px
+  let closed = false;
+  let dragIdx = -1;
+  let hoverPt = null;
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const info = document.getElementById('info');
+
+  // Theme colors
+  function colors() {
+    return isDark ? {
+      bg:'#1e1e1e', gridMinor:'#2a2a2a', gridMajor:'#3a3a3a',
+      axis:'#666', poly:'rgba(76,175,80,0.25)', polyStroke:'#4caf50',
+      text:'#fff', textBg:'rgba(0,0,0,0.75)', angleText:'#4fc3f7',
+      vertex:'#4caf50', vertexStroke:'#fff', info:'rgba(30,30,30,0.9)',
+      infoText:'#aaa', angle90:'#4caf50', angleOther:'#ff9800',
+      hoverLine:'rgba(76,175,80,0.5)', dimBg:'rgba(0,0,0,0.8)'
+    } : {
+      bg:'#f8f8f8', gridMinor:'#e8e8e8', gridMajor:'#d0d0d0',
+      axis:'#999', poly:'rgba(165,214,167,0.3)', polyStroke:'#2e7d32',
+      text:'#1b5e20', textBg:'rgba(255,255,255,0.85)', angleText:'#1565c0',
+      vertex:'#2e7d32', vertexStroke:'#fff', info:'rgba(255,255,255,0.9)',
+      infoText:'#666', angle90:'#2e7d32', angleOther:'#e65100',
+      hoverLine:'rgba(46,125,50,0.4)', dimBg:'rgba(255,255,255,0.9)'
+    };
+  }
+
+  function snap(v) { return Math.round(v / gridPx) * gridPx; }
+  function dist(a, b) { return Math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2); }
+  function distMm(a, b) {
+    let dx = (a[0]-b[0]) * mmPerPx, dy = (a[1]-b[1]) * mmPerPx;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+  function angleDeg(pp, pc, pn) {
+    let v1x=pp[0]-pc[0], v1y=pp[1]-pc[1], v2x=pn[0]-pc[0], v2y=pn[1]-pc[1];
+    let m1=Math.sqrt(v1x*v1x+v1y*v1y), m2=Math.sqrt(v2x*v2x+v2y*v2y);
+    if(m1<1e-6||m2<1e-6) return 0;
+    let cos = Math.max(-1, Math.min(1, (v1x*v2x+v1y*v2y)/(m1*m2)));
+    return Math.round(Math.acos(cos)*180/Math.PI);
+  }
+
+  function drawGrid(c) {
+    // Background
+    ctx.fillStyle = c.bg;
+    ctx.fillRect(0, 0, W, H);
+    // Minor grid
+    ctx.strokeStyle = c.gridMinor; ctx.lineWidth = 1;
+    for(let x=gridPx; x<W; x+=gridPx) {
+      if(x % (gridPx*4) === 0) continue;
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+    }
+    for(let y=gridPx; y<H; y+=gridPx) {
+      if(y % (gridPx*4) === 0) continue;
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    }
+    // Major grid
+    ctx.strokeStyle = c.gridMajor; ctx.lineWidth = 1.5;
+    for(let x=0; x<=W; x+=gridPx*4) {
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+    }
+    for(let y=0; y<=H; y+=gridPx*4) {
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    }
+    // Axis labels
+    ctx.font = '10px Inter, sans-serif'; ctx.fillStyle = c.axis;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    for(let x=gridPx*4; x<=W; x+=gridPx*4) {
+      let m = (x * mmPerPx / 1000).toFixed(1);
+      ctx.fillText(m+'м', x+3, 3);
+    }
+    for(let y=gridPx*4; y<=H; y+=gridPx*4) {
+      let m = (y * mmPerPx / 1000).toFixed(1);
+      ctx.fillText(m+'м', 3, y+3);
+    }
+  }
+
+  function drawDimLabel(x, y, text, c, font) {
+    ctx.font = font || 'bold 12px Inter, sans-serif';
+    let m = ctx.measureText(text);
+    let tw = m.width, th = 14;
+    let px = 5, py = 3;
+    ctx.fillStyle = c.dimBg;
+    roundRect(x-tw/2-px, y-th/2-py, tw+2*px, th+2*py, 4);
+    ctx.fill();
+    ctx.fillStyle = c.text;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+  }
+
+  function drawAngleLabel(x, y, angle, c) {
+    let text = angle + '°';
+    ctx.font = '11px Inter, sans-serif';
+    let m = ctx.measureText(text);
+    let tw = m.width, th = 13, px = 4, py = 3;
+    ctx.fillStyle = c.dimBg;
+    roundRect(x-tw/2-px, y-th/2-py, tw+2*px, th+2*py, 4);
+    ctx.fill();
+    let col = angle===90 ? c.angle90 : c.angleOther;
+    ctx.fillStyle = col;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.lineTo(x+w-r, y); ctx.arcTo(x+w, y, x+w, y+r, r);
+    ctx.lineTo(x+w, y+h-r); ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+    ctx.lineTo(x+r, y+h); ctx.arcTo(x, y+h, x, y+h-r, r);
+    ctx.lineTo(x, y+r); ctx.arcTo(x, y, x+r, y, r);
+    ctx.closePath();
+  }
+
+  function render() {
+    let c = colors();
+    drawGrid(c);
+    let n = vertices.length;
+    if(n === 0) {
+      info.style.background = c.info; info.style.color = c.infoText;
+      info.textContent = '🖱 Кликайте по сетке для добавления вершин. Двойной клик — замкнуть контур.';
+      return;
+    }
+
+    // Draw filled polygon
+    if(n >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(vertices[0][0], vertices[0][1]);
+      for(let i=1; i<n; i++) ctx.lineTo(vertices[i][0], vertices[i][1]);
+      if(closed) ctx.closePath();
+      ctx.fillStyle = c.poly; ctx.fill();
+      ctx.strokeStyle = c.polyStroke; ctx.lineWidth = 2.5; ctx.stroke();
+    }
+
+    // Hover line from last vertex to mouse
+    if(!closed && hoverPt && n >= 1) {
+      let last = vertices[n-1];
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = c.hoverLine; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(hoverPt[0], hoverPt[1]); ctx.stroke();
+      ctx.setLineDash([]);
+      // Live dimension for hover segment
+      let dMm = distMm(last, hoverPt);
+      let mx = (last[0]+hoverPt[0])/2, my = (last[1]+hoverPt[1])/2;
+      drawDimLabel(mx, my - 18, (dMm/1000).toFixed(2) + ' м', c);
+    }
+
+    // Edge dimension labels
+    let edgeCount = closed ? n : n - 1;
+    for(let i=0; i<edgeCount; i++) {
+      let p1 = vertices[i], p2 = vertices[(i+1)%n];
+      let mx = (p1[0]+p2[0])/2, my = (p1[1]+p2[1])/2;
+      let dx = p2[0]-p1[0], dy = p2[1]-p1[1];
+      let len = Math.sqrt(dx*dx+dy*dy);
+      let dMm = distMm(p1, p2);
+      let label = (dMm/1000).toFixed(2) + ' м';
+      // Offset along normal
+      let nx=0, ny=-1;
+      if(len > 0) { nx = -dy/len; ny = dx/len; }
+      let off = 18;
+      drawDimLabel(mx + nx*off, my + ny*off, label, c);
+    }
+
+    // Angle labels (3+ vertices, or 2+ if closed)
+    let angleCount = closed ? n : n - 2;
+    if(closed && n >= 3) {
+      for(let i=0; i<n; i++) {
+        let pp = vertices[(i-1+n)%n], pc = vertices[i], pn = vertices[(i+1)%n];
+        let ang = angleDeg(pp, pc, pn);
+        // Bisector direction for offset
+        let d1x=pp[0]-pc[0], d1y=pp[1]-pc[1], d2x=pn[0]-pc[0], d2y=pn[1]-pc[1];
+        let m1=Math.sqrt(d1x*d1x+d1y*d1y), m2=Math.sqrt(d2x*d2x+d2y*d2y);
+        let bx=0, by=-1;
+        if(m1>0&&m2>0) { bx=d1x/m1+d2x/m2; by=d1y/m1+d2y/m2; }
+        let bm=Math.sqrt(bx*bx+by*by);
+        let ofa = 28;
+        if(bm>0.01) { bx=bx/bm*ofa; by=by/bm*ofa; } else { bx=0; by=-ofa; }
+        drawAngleLabel(pc[0]+bx, pc[1]+by, ang, c);
+      }
+    } else if(!closed && n >= 3) {
+      // Show angles at interior vertices only
+      for(let i=1; i<n-1; i++) {
+        let pp = vertices[i-1], pc = vertices[i], pn = vertices[i+1];
+        let ang = angleDeg(pp, pc, pn);
+        let d1x=pp[0]-pc[0], d1y=pp[1]-pc[1], d2x=pn[0]-pc[0], d2y=pn[1]-pc[1];
+        let m1=Math.sqrt(d1x*d1x+d1y*d1y), m2=Math.sqrt(d2x*d2x+d2y*d2y);
+        let bx=0, by=-1;
+        if(m1>0&&m2>0) { bx=d1x/m1+d2x/m2; by=d1y/m1+d2y/m2; }
+        let bm=Math.sqrt(bx*bx+by*by);
+        let ofa = 28;
+        if(bm>0.01) { bx=bx/bm*ofa; by=by/bm*ofa; } else { bx=0; by=-ofa; }
+        drawAngleLabel(pc[0]+bx, pc[1]+by, ang, c);
+      }
+    }
+
+    // Vertices
+    for(let i=0; i<n; i++) {
+      let v = vertices[i];
+      ctx.beginPath(); ctx.arc(v[0], v[1], 7, 0, Math.PI*2);
+      ctx.fillStyle = c.vertex; ctx.fill();
+      ctx.strokeStyle = c.vertexStroke; ctx.lineWidth = 2; ctx.stroke();
+      // Number
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Inter, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(i+1), v[0], v[1]);
+    }
+
+    // Info bar
+    info.style.background = c.info; info.style.color = c.infoText;
+    if(closed) {
+      // Calculate area (Shoelace)
+      let area = 0;
+      for(let i=0; i<n; i++) {
+        let j=(i+1)%n;
+        area += vertices[i][0]*mmPerPx * vertices[j][1]*mmPerPx;
+        area -= vertices[j][0]*mmPerPx * vertices[i][1]*mmPerPx;
+      }
+      area = Math.abs(area) / 2 / 1e6;
+      info.textContent = '✅ Контур замкнут | Площадь: ' + area.toFixed(2) + ' м² | Вершин: ' + n + ' | Кликните вершину, чтобы перетащить';
+    } else {
+      info.textContent = '✏️ Вершин: ' + n + ' | Кликните для следующей точки | Двойной клик — замкнуть';
+    }
+  }
+
+  function sendValue() {
+    let vMm = vertices.map(v => [Math.round(v[0]*mmPerPx), Math.round(v[1]*mmPerPx)]);
+    Stl.setComponentValue(vMm);
+  }
+
+  function findVertex(x, y, radius) {
+    for(let i=0; i<vertices.length; i++) {
+      if(dist([x,y], vertices[i]) <= radius) return i;
+    }
+    return -1;
+  }
+
+  let lastClick = 0;
+  canvas.addEventListener('mousedown', function(e) {
+    let rect = canvas.getBoundingClientRect();
+    let x = e.clientX - rect.left, y = e.clientY - rect.top;
+    let now = Date.now();
+
+    // Double click detection
+    if(now - lastClick < 350 && !closed && vertices.length >= 3) {
+      closed = true;
+      render(); sendValue();
+      lastClick = 0;
+      return;
+    }
+    lastClick = now;
+
+    if(closed) {
+      // In closed mode, allow dragging vertices
+      dragIdx = findVertex(x, y, 12);
+      return;
+    }
+
+    // Snap to grid
+    let sx = snap(x), sy = snap(y);
+    // Check if clicking near first vertex to close
+    if(vertices.length >= 3 && dist([sx, sy], vertices[0]) < gridPx) {
+      closed = true;
+      render(); sendValue();
+      return;
+    }
+    vertices.push([sx, sy]);
+    render(); sendValue();
+  });
+
+  canvas.addEventListener('mousemove', function(e) {
+    let rect = canvas.getBoundingClientRect();
+    let x = e.clientX - rect.left, y = e.clientY - rect.top;
+    if(dragIdx >= 0) {
+      vertices[dragIdx] = [snap(x), snap(y)];
+      render(); sendValue();
+      return;
+    }
+    if(!closed) {
+      hoverPt = [snap(x), snap(y)];
+      render();
+    }
+  });
+
+  canvas.addEventListener('mouseup', function() { dragIdx = -1; });
+  canvas.addEventListener('mouseleave', function() { hoverPt = null; if(!closed) render(); });
+
+  // Context menu to delete last vertex or reset
+  canvas.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    if(closed) {
+      closed = false; vertices = [];
+    } else if(vertices.length > 0) {
+      vertices.pop();
+    }
+    render(); sendValue();
+  });
+
+  // Init from Streamlit
+  function onRender(event) {
+    let args = event.detail.args;
+    W = args.width || 700;
+    H = args.height || 450;
+    gridPx = args.gridPx || 25;
+    mmPerCell = args.mmPerCell || 500;
+    mmPerPx = args.mmPerPx || (mmPerCell / gridPx);
+    isDark = args.isDark !== undefined ? args.isDark : true;
+
+    canvas.width = W; canvas.height = H;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+
+    // Load initial vertices if provided and we have none
+    if(vertices.length === 0 && args.initialVerticesMm && args.initialVerticesMm.length >= 3) {
+      vertices = args.initialVerticesMm.map(v => [v[0]/mmPerPx, v[1]/mmPerPx]);
+      closed = true;
+    }
+
+    render();
+    Stl.setFrameHeight(H + 40);
+  }
+
+  Stl.events.addEventListener(Stl.RENDER_EVENT, onRender);
+  Stl.setComponentReady();
+})();
+</script>
+</body>
+</html>

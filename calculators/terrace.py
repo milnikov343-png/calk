@@ -238,3 +238,4 @@ def polygon_row_segments(vertices, y):
             segments.append((intersections[i], intersections[i + 1]))
     return segments
 
+# Layout modes: symmetric / economy — v2
