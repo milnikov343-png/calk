@@ -41,7 +41,7 @@ MIN_CUT_LENGTH = 1.0  # Минимальная допустимая длина �
 #   12м, доска 4м → ряд A = [4, 4, 4],        ряд B = [2, 4, 4, 2]
 #   8.5м, доска 4м→ ряд A = [2.25, 4, 2.25],  ряд B = [3.25, 4, 1.25]
 
-from calculators.terrace import get_row_patterns, get_1d_symmetric_pieces, get_best_symmetric_layout, optimize_waste, get_shifted_edge, draw_edge, point_in_polygon, polygon_row_segments
+from calculators.terrace import get_row_patterns, get_1d_symmetric_pieces, get_best_symmetric_layout, get_custom_length_layout, consolidate_lengths, round_up_to_custom, optimize_waste, get_shifted_edge, draw_edge, point_in_polygon, polygon_row_segments
 
 # --- Тема оформления ---
 from theme import apply_theme
@@ -501,6 +501,12 @@ elif current_step == 4:
             colls = list(PARSED_BOARDS[brand_choice].keys())
             if 'ts_collection' not in st.session_state: st.session_state.ts_collection = colls[0]
             st.selectbox("Коллекция:", colls, key='ts_collection')
+            
+            if st.session_state.ts_collection in ["Террапол Практик", "Террапол Антик"]:
+                if 'ts_length_mode' not in st.session_state: st.session_state.ts_length_mode = "Складские доски"
+                st.radio("Режим заказа:", ["Складские доски", "Любая длина под заказ"], key='ts_length_mode')
+            else:
+                st.session_state.ts_length_mode = "Складские доски"
         else:
             st.warning("Нет доступных коллекций для выбранного бренда.")
 
@@ -583,6 +589,23 @@ elif current_step == 5:
         collection_name = list(PARSED_BOARDS[brand_choice].keys())[0]
     collection_boards = PARSED_BOARDS[brand_choice][collection_name]
     eff_w = (collection_boards[0]["width_mm"] + GAP_MM) / 1000
+    
+    length_mode_choice = st.session_state.get('ts_length_mode', 'Складские доски')
+    is_custom_length = False
+    if collection_name in ["Террапол Практик", "Террапол Антик"] and length_mode_choice == "Любая длина под заказ":
+        is_custom_length = True
+        base_price_per_m = collection_boards[0]['board_cost'] / collection_boards[0]['length_m']
+        custom_boards = []
+        for x in range(5, 61):
+            L = round(x / 10.0, 1)
+            custom_boards.append({
+                "name": f"{collection_name} {L:.1f}м (под заказ)",
+                "length_m": L,
+                "board_cost": L * base_price_per_m,
+                "unit": collection_boards[0]['unit'],
+                "width_mm": collection_boards[0]['width_mm']
+            })
+        collection_boards = custom_boards
 
     is_complex = shape_key in ('l_shape', 'u_shape', 'custom')
 
@@ -638,15 +661,22 @@ elif current_step == 5:
             st.error("Не удалось разбить контур на ряды."); st.stop()
 
         row_lengths_arr = [rs[3] for rs in row_segments]
-        layout_matrix, best_joints, main_board = get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards, mode=layout_mode)
+        if is_custom_length:
+            layout_matrix, best_joints, main_board = get_custom_length_layout(row_lengths_arr, eff_w, collection_boards, mode=layout_mode)
+        else:
+            layout_matrix, best_joints, main_board = get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards, mode=layout_mode)
         M = main_board['length_m']
 
         main_pieces = [p for row in layout_matrix for p in row]
         if '_mixed_counts' in main_board and main_pieces:
-            board_main_totals = {nm: {"qty": d['qty'], "sum": d['sum'], "unit": d['board']['unit']} for nm, d in main_board['_mixed_counts'].items()}
+            board_main_totals = {nm: {"qty": d['qty'], "sum": d['sum'], "unit": d['board']['unit'], "board": d['board']} for nm, d in main_board['_mixed_counts'].items()}
         else:
             board_main_totals = optimize_waste(main_pieces, main_board) if main_pieces else {}
         board_edge_totals = {}
+        
+        consolidate_history = {}
+        if is_custom_length:
+            board_main_totals, consolidate_history = consolidate_lengths(board_main_totals)
 
         extra_joists = len(best_joints) * 2
         joist_lines = math.ceil(poly_w / JOIST_STEP_M) + 1 + extra_joists
@@ -791,7 +821,10 @@ elif current_step == 5:
             rows_count = math.ceil(board_row_axis / eff_w)
             for r in range(rows_count): row_lengths_arr.append(inner_Y)
 
-        layout_matrix, best_joints, main_board = get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards, mode=layout_mode)
+        if is_custom_length:
+            layout_matrix, best_joints, main_board = get_custom_length_layout(row_lengths_arr, eff_w, collection_boards, mode=layout_mode)
+        else:
+            layout_matrix, best_joints, main_board = get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards, mode=layout_mode)
         M = main_board['length_m']
 
         edge_pieces = []
@@ -812,10 +845,37 @@ elif current_step == 5:
 
         main_pieces = [p for row in layout_matrix for p in row]
         if '_mixed_counts' in main_board and main_pieces:
-            board_main_totals = {nm: {"qty": d['qty'], "sum": d['sum'], "unit": d['board']['unit']} for nm, d in main_board['_mixed_counts'].items()}
+            board_main_totals = {nm: {"qty": d['qty'], "sum": d['sum'], "unit": d['board']['unit'], "board": d['board']} for nm, d in main_board['_mixed_counts'].items()}
         else:
             board_main_totals = optimize_waste(main_pieces, main_board) if main_pieces else {}
-        board_edge_totals = optimize_waste(edge_pieces, main_board) if edge_pieces else {}
+            
+        if is_custom_length and edge_pieces:
+            board_edge_totals = {}
+            for p in edge_pieces:
+                brd = round_up_to_custom(p, collection_boards)
+                nm = brd['name']
+                if nm not in board_edge_totals:
+                    board_edge_totals[nm] = {'qty': 0, 'sum': 0.0, 'unit': brd['unit'], 'board': brd}
+                board_edge_totals[nm]['qty'] += 1
+                board_edge_totals[nm]['sum'] += brd['board_cost']
+        else:
+            board_edge_totals = optimize_waste(edge_pieces, main_board) if edge_pieces else {}
+            
+        consolidate_history = {}
+        if is_custom_length:
+            combined_counts = {}
+            for k, v in board_main_totals.items():
+                if k not in combined_counts: combined_counts[k] = v.copy()
+                else: 
+                    combined_counts[k]['qty'] += v['qty']
+                    combined_counts[k]['sum'] += v['sum']
+            for k, v in board_edge_totals.items():
+                if k not in combined_counts: combined_counts[k] = v.copy()
+                else: 
+                    combined_counts[k]['qty'] += v['qty']
+                    combined_counts[k]['sum'] += v['sum']
+            board_main_totals, consolidate_history = consolidate_lengths(combined_counts)
+            board_edge_totals = {}
 
         extra_joists = len(best_joints) * 2
         joist_count_base = math.ceil(board_len_axis / JOIST_STEP_M) + 1
@@ -1004,6 +1064,18 @@ elif current_step == 5:
         st.markdown("#### :material/inventory: Смета материалов")
         st.dataframe(mat_data, hide_index=True, use_container_width=True, 
                      column_config={"Сумма": st.column_config.NumberColumn(format="%.0f ₽")})
+        if consolidate_history:
+            with st.expander(":material/info: Служебная информация по раскрою"):
+                st.markdown("**Укрупнение мелких партий (менее 10 шт):**")
+                for new_name, old_names in consolidate_history.items():
+                    if "дозаказ" in old_names[0]:
+                        st.write(f"- **{old_names[0]}**")
+                    else:
+                        old_str = ', '.join([n.replace(collection_name, '').strip() for n in old_names if n != new_name])
+                        if old_str:
+                            st.write(f"- **{new_name}** (включает бывшие: {old_str})")
+                        else:
+                            st.write(f"- **{new_name}** (было объединение)")
     with colB:
         st.markdown("#### :material/construction: Смета работ")
         st.dataframe(work_data, hide_index=True, use_container_width=True,

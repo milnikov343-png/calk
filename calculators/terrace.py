@@ -101,12 +101,18 @@ def _gen_mixed_patterns(L, board_lengths, min_cut_length=0.3):
             remainder = round(L - middle_sum, 3)
 
             if abs(remainder) < 0.001:
-                # Целые доски заполняют ряд полностью
+                # Целые доски заполняют ряд полностью — НОЛЬ отходов, минимум резов
                 pattern = list(combo)
                 is_sym = (pattern == pattern[::-1])
-                penalty = 0.0 if is_sym else 50.0
-                penalty += len(pattern) * 0.01
+                # Точное заполнение целыми досками — лучший вариант
+                # Даже несимметричный [3,4] отлично работает в паре с [4,3]
+                penalty = 0.0
+                penalty += len(pattern) * 0.001  # минимальный штраф за кол-во кусков
                 candidates.append((pattern, penalty))
+                # Добавляем реверс для стагера ([3,4] → [4,3])
+                if not is_sym:
+                    rev = pattern[::-1]
+                    candidates.append((rev, penalty))
             else:
                 edge = round(remainder / 2.0, 3)
                 if edge >= min_cut_length:
@@ -173,80 +179,146 @@ def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards,
     best_base_board = None
 
     if mode == 'symmetric':
-        # ─── Симметричный режим: смешанные доски ───
-        board_lengths = [b['length_m'] for b in collection_boards]
-        boards_by_cpm = sorted(collection_boards, key=lambda b: b['board_cost'] / b['length_m'])
+        # ─── Симметричный режим ───
+        # Стратегия: сначала пробуем каждый одиночный типоразмер доски.
+        # Если хотя бы один даёт хорошую симметрию (penalty < порога) — берём его.
+        # Если все одиночные дают плохую симметрию — используем смешанные длины.
 
-        # Для каждого уникального L строим смешанные паттерны
-        unique_lengths = {}
-        for L in row_lengths_arr:
-            L_key = round(L, 3)
-            if L_key not in unique_lengths and L_key > 0.01:
-                pats = _gen_mixed_patterns(L_key, board_lengths, min_cut_length)
-                row_A, row_B = _pick_staggered_pair(pats, L_key)
-                unique_lengths[L_key] = (row_A, row_B)
+        SYM_THRESHOLD = 5.0  # порог: выше = плохая симметрия, нужно смешивать
 
-        layout_matrix = []
-        joints = set()
-        for r, L in enumerate(row_lengths_arr):
-            L_key = round(L, 3)
-            if L_key <= 0.01:
-                layout_matrix.append([])
-                continue
-            row_A, row_B = unique_lengths[L_key]
-            current_row = row_A if r % 2 == 0 else row_B
-            layout_matrix.append(current_row)
-            jx = 0
-            for p in current_row[:-1]:
-                jx = round(jx + p, 3)
-                joints.add(jx)
+        # --- Фаза 1: одиночные доски ---
+        single_candidates = []
+        for base_board in collection_boards:
+            M = base_board['length_m']
+            layout_matrix = []
+            joints = set()
+            for r, L in enumerate(row_lengths_arr):
+                if L <= 0.01:
+                    layout_matrix.append([])
+                    continue
+                row_A, row_B = get_row_patterns(L, M, min_cut_length, min_stagger)
+                current_row = row_A if r % 2 == 0 else row_B
+                layout_matrix.append(current_row)
+                jx = 0
+                for p in current_row[:-1]:
+                    jx = round(jx + p, 3)
+                    joints.add(jx)
 
-        # Bin-packing с мультиразмерными досками
-        flat_pieces = sorted([p for row in layout_matrix for p in row], reverse=True)
-        bins = []  # list of (board_dict, used_float)
-        for p in flat_pieces:
-            placed = False
-            # Best-fit в существующий бин
-            best_idx = -1
-            best_rem = float('inf')
-            for i, (brd, used) in enumerate(bins):
-                rem = round(brd['length_m'] - used, 3)
-                if rem >= p and rem < best_rem:
-                    best_idx = i
-                    best_rem = rem
-            if best_idx >= 0:
-                brd, used = bins[best_idx]
-                bins[best_idx] = (brd, round(used + p, 3))
-                placed = True
-            if not placed:
-                for brd in boards_by_cpm:
-                    if brd['length_m'] >= p:
-                        bins.append((brd, round(p, 3)))
+            flat_pieces = sorted([p for row in layout_matrix for p in row], reverse=True)
+            bins = []
+            for p in flat_pieces:
+                placed = False
+                bins.sort(key=lambda b: M - b)
+                for i in range(len(bins)):
+                    if round(M - bins[i], 3) >= p:
+                        bins[i] = round(bins[i] + p, 3)
                         placed = True
                         break
                 if not placed:
-                    bins.append((boards_by_cpm[-1], round(p, 3)))
+                    bins.append(p)
 
-        total_cost = sum(brd['board_cost'] for brd, used in bins)
-        waste_m = sum(round(brd['length_m'] - used, 3) for brd, used in bins)
+            waste_m = sum(round(M - b, 3) for b in bins)
+            total_cost = len(bins) * base_board['board_cost']
 
-        # Подсчёт использованных досок по типоразмерам
-        board_counts = {}
-        for brd, used in bins:
-            nm = brd['name']
-            if nm not in board_counts:
-                board_counts[nm] = {'qty': 0, 'sum': 0, 'board': brd}
-            board_counts[nm]['qty'] += 1
-            board_counts[nm]['sum'] += brd['board_cost']
+            sym_penalty = 0.0
+            for row in layout_matrix:
+                if len(row) < 2:
+                    continue
+                diff = abs(row[0] - row[-1])
+                if diff > 0.01:
+                    sym_penalty += diff * 10
+                min_piece = min(row)
+                if min_piece < M * 0.3:
+                    sym_penalty += (M * 0.3 - min_piece) * 5
+                sym_penalty += len(row) * 0.01
 
-        # main_board — самая длинная доска (для чертежей и торцевых)
-        best_base_board = max(collection_boards, key=lambda b: b['length_m'])
-        best_layout = layout_matrix
-        best_joints = joints
-        best_cost = total_cost
-        best_waste = waste_m
-        best_base_board = dict(best_base_board)  # копия
-        best_base_board['_mixed_counts'] = board_counts
+            single_candidates.append({
+                'board': base_board, 'layout': layout_matrix, 'joints': joints,
+                'cost': total_cost, 'waste': waste_m, 'penalty': sym_penalty
+            })
+
+        # Лучший одиночный вариант (по симметрии, потом по стоимости)
+        single_candidates.sort(key=lambda c: (round(c['penalty'], 2), c['cost']))
+        best_single = single_candidates[0]
+
+        if best_single['penalty'] <= SYM_THRESHOLD:
+            # Хорошая симметрия с одной доской — используем её
+            best_layout = best_single['layout']
+            best_joints = best_single['joints']
+            best_base_board = best_single['board']
+            best_cost = best_single['cost']
+            best_waste = best_single['waste']
+        else:
+            # --- Фаза 2: смешанные доски ---
+            board_lengths = [b['length_m'] for b in collection_boards]
+            boards_by_cpm = sorted(collection_boards, key=lambda b: b['board_cost'] / b['length_m'])
+
+            unique_lengths = {}
+            for L in row_lengths_arr:
+                L_key = round(L, 3)
+                if L_key not in unique_lengths and L_key > 0.01:
+                    pats = _gen_mixed_patterns(L_key, board_lengths, min_cut_length)
+                    row_A, row_B = _pick_staggered_pair(pats, L_key)
+                    unique_lengths[L_key] = (row_A, row_B)
+
+            layout_matrix = []
+            joints = set()
+            for r, L in enumerate(row_lengths_arr):
+                L_key = round(L, 3)
+                if L_key <= 0.01:
+                    layout_matrix.append([])
+                    continue
+                row_A, row_B = unique_lengths[L_key]
+                current_row = row_A if r % 2 == 0 else row_B
+                layout_matrix.append(current_row)
+                jx = 0
+                for p in current_row[:-1]:
+                    jx = round(jx + p, 3)
+                    joints.add(jx)
+
+            # Bin-packing с мультиразмерными досками
+            flat_pieces = sorted([p for row in layout_matrix for p in row], reverse=True)
+            bins = []
+            for p in flat_pieces:
+                placed = False
+                best_idx = -1
+                best_rem = float('inf')
+                for i, (brd, used) in enumerate(bins):
+                    rem = round(brd['length_m'] - used, 3)
+                    if rem >= p and rem < best_rem:
+                        best_idx = i
+                        best_rem = rem
+                if best_idx >= 0:
+                    brd, used = bins[best_idx]
+                    bins[best_idx] = (brd, round(used + p, 3))
+                    placed = True
+                if not placed:
+                    for brd in boards_by_cpm:
+                        if brd['length_m'] >= p:
+                            bins.append((brd, round(p, 3)))
+                            placed = True
+                            break
+                    if not placed:
+                        bins.append((boards_by_cpm[-1], round(p, 3)))
+
+            total_cost = sum(brd['board_cost'] for brd, used in bins)
+            waste_m = sum(round(brd['length_m'] - used, 3) for brd, used in bins)
+
+            board_counts = {}
+            for brd, used in bins:
+                nm = brd['name']
+                if nm not in board_counts:
+                    board_counts[nm] = {'qty': 0, 'sum': 0, 'board': brd}
+                board_counts[nm]['qty'] += 1
+                board_counts[nm]['sum'] += brd['board_cost']
+
+            best_base_board = max(collection_boards, key=lambda b: b['length_m'])
+            best_layout = layout_matrix
+            best_joints = joints
+            best_cost = total_cost
+            best_waste = waste_m
+            best_base_board = dict(best_base_board)
+            best_base_board['_mixed_counts'] = board_counts
 
     else:
         # ─── Эконом режим: один типоразмер, минимизация стоимости ───
@@ -383,3 +455,134 @@ def polygon_row_segments(vertices, y):
         if intersections[i + 1] - intersections[i] > 0.001:
             segments.append((intersections[i], intersections[i + 1]))
     return segments
+
+# --- Работа с досками произвольной длины (под заказ) ---
+
+def round_up_to_custom(piece_len, custom_boards):
+    """Находит минимальную доску из custom_boards, которая >= piece_len."""
+    for b in custom_boards:
+        if b['length_m'] >= piece_len - 0.001:
+            return b
+    return custom_boards[-1]
+
+def get_custom_length_layout(row_lengths_arr, eff_w, custom_boards, mode='symmetric'):
+    """
+    Раскладка для режима "Любая длина под заказ".
+    custom_boards — список досок (от 0.5 до 6.0 м) с шагом 0.1 м, отсортированный по длине.
+    """
+    max_board = custom_boards[-1]
+    M = max_board['length_m']
+    
+    layout_matrix = []
+    joints = set()
+    board_counts = {}
+    total_cost = 0.0
+    waste_m = 0.0
+    
+    for r, L in enumerate(row_lengths_arr):
+        if L <= 0.01:
+            layout_matrix.append([])
+            continue
+            
+        if L <= M:
+            row_A = [L]
+            row_B = [L]
+        else:
+            if mode == 'symmetric':
+                row_A, row_B = get_row_patterns(L, M)
+            else:
+                # Эконом: бьём на куски по максимальной длине M (обычно 6м) + остаток
+                K = int(L // M)
+                rem = round(L - K * M, 3)
+                row = [M] * K
+                if rem > 0.01:
+                    row.append(rem)
+                row_A = row
+                row_B = row
+                
+        current_row = row_A if r % 2 == 0 else row_B
+        layout_matrix.append(current_row)
+        
+        jx = 0
+        for p in current_row[:-1]:
+            jx = round(jx + p, 3)
+            joints.add(jx)
+            
+        # Заносим каждый кусок в смету (округляя до доступного типоразмера)
+        for p in current_row:
+            brd = round_up_to_custom(p, custom_boards)
+            nm = brd['name']
+            if nm not in board_counts:
+                board_counts[nm] = {'qty': 0, 'sum': 0.0, 'board': brd}
+            board_counts[nm]['qty'] += 1
+            board_counts[nm]['sum'] += brd['board_cost']
+            total_cost += brd['board_cost']
+            waste_m += round(brd['length_m'] - p, 3)
+            
+    best_base_board = dict(max_board)
+    best_base_board['_mixed_counts'] = board_counts
+    
+    return layout_matrix, joints, best_base_board
+
+def consolidate_lengths(board_counts, min_qty=10):
+    """
+    Группирует мелкие партии (< 10 шт) в ближайшие бОльшие длины.
+    Возвращает обновлённую смету и словарь истории объединений для менеджера.
+    """
+    items = list(board_counts.values())
+    items.sort(key=lambda x: x['board']['length_m'])
+    
+    if not any(item['qty'] < min_qty for item in items):
+        return board_counts, {}
+        
+    history = {}
+    
+    while True:
+        items.sort(key=lambda x: x['board']['length_m'])
+        target_idx = -1
+        for i, item in enumerate(items):
+            if 0 < item['qty'] < min_qty:
+                target_idx = i
+                break
+                
+        if target_idx == -1:
+            break
+            
+        target_item = items[target_idx]
+        
+        merge_idx = -1
+        for i in range(target_idx + 1, len(items)):
+            if items[i]['qty'] > 0:
+                merge_idx = i
+                break
+                
+        if merge_idx != -1:
+            merge_item = items[merge_idx]
+            merge_item['qty'] += target_item['qty']
+            merge_item['sum'] = merge_item['qty'] * merge_item['board']['board_cost']
+            
+            new_name = merge_item['board']['name']
+            old_name = target_item['board']['name']
+            
+            if new_name not in history:
+                history[new_name] = [new_name]
+            if old_name in history:
+                history[new_name].extend(history[old_name])
+                del history[old_name]
+            else:
+                history[new_name].append(old_name)
+                
+            target_item['qty'] = 0
+        else:
+            old_qty = target_item['qty']
+            target_item['qty'] = min_qty
+            target_item['sum'] = min_qty * target_item['board']['board_cost']
+            new_name = target_item['board']['name']
+            if new_name not in history:
+                history[new_name] = [f"{new_name} (дозаказ с {old_qty} до {min_qty} шт)"]
+            break
+            
+    final_counts = {item['board']['name']: item for item in items if item['qty'] > 0}
+    clean_history = {k: v for k, v in history.items() if len(v) > 1 or "дозаказ" in v[0]}
+            
+    return final_counts, clean_history
