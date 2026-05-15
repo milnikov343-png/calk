@@ -509,6 +509,14 @@ elif current_step == 4:
             if 'ts_direction' not in st.session_state: st.session_state.ts_direction = "Вдоль фасада (по длине X)"
             st.radio("Направление укладки:", ["Вдоль фасада (по длине X)", "Поперек фасада (по глубине Y)"], key='ts_direction')
 
+        st.markdown("---")
+        if 'ts_layout_mode' not in st.session_state: st.session_state.ts_layout_mode = ":material/palette: Симметричная (красивая)"
+        st.radio("Режим раскладки доски:",
+                 [":material/palette: Симметричная (красивая)", ":material/savings: Экономичная (минимум отходов)"],
+                 key='ts_layout_mode',
+                 help="**Симметричная** — выбирает доску, которая делится ровно по длине (3+3+3 для 9м). "
+                      "**Экономичная** — минимизирует общую стоимость с учётом обрезков.")
+
     with c2:
         st.markdown("#### Окантовка (Picture Frame)")
         if 'ts_use_frame' not in st.session_state: st.session_state.ts_use_frame = True
@@ -564,6 +572,8 @@ elif current_step == 5:
     edge_left = st.session_state.get('ts_edge_left', True) if use_frame else False
     edge_right = st.session_state.get('ts_edge_right', True) if use_frame else False
     direction_choice = st.session_state.get('ts_direction', "Вдоль фасада (по длине X)")
+    layout_mode_label = st.session_state.get('ts_layout_mode', ':material/palette: Симметричная (красивая)')
+    layout_mode = 'symmetric' if 'Симметричная' in layout_mode_label else 'economy'
     has_pool = st.session_state.get('ts_has_pool', False)
 
     # Доска
@@ -628,7 +638,7 @@ elif current_step == 5:
             st.error("Не удалось разбить контур на ряды."); st.stop()
 
         row_lengths_arr = [rs[3] for rs in row_segments]
-        layout_matrix, best_joints, main_board = get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards)
+        layout_matrix, best_joints, main_board = get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards, mode=layout_mode)
         M = main_board['length_m']
 
         main_pieces = [p for row in layout_matrix for p in row]
@@ -778,7 +788,7 @@ elif current_step == 5:
             rows_count = math.ceil(board_row_axis / eff_w)
             for r in range(rows_count): row_lengths_arr.append(inner_Y)
 
-        layout_matrix, best_joints, main_board = get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards)
+        layout_matrix, best_joints, main_board = get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards, mode=layout_mode)
         M = main_board['length_m']
 
         edge_pieces = []
@@ -956,6 +966,16 @@ elif current_step == 5:
         <div style="font-size:0.9rem;color:{label_color};text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem;">Итоговая стоимость</div>
         <div style="font-size:3.5rem;font-weight:900;background:linear-gradient(135deg,#f59e0b,#ea580c,#dc2626);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.1;">{grand_total:,.0f} ₽</div>
         <div style="font-size:0.85rem;color:{label_color};margin-top:0.5rem;">Материалы + Работы</div>
+    </div>""", unsafe_allow_html=True)
+
+    # Бейдж режима раскладки
+    _mode_icon = "🎨" if layout_mode == 'symmetric' else "💰"
+    _mode_name = "Симметричная раскладка" if layout_mode == 'symmetric' else "Экономичная раскладка"
+    _mode_color = "#4caf50" if layout_mode == 'symmetric' else "#ff9800"
+    st.markdown(f"""<div style="text-align:center;margin-bottom:1rem;">
+        <span style="background:{_mode_color}22;color:{_mode_color};padding:6px 16px;border-radius:20px;font-size:0.85rem;font-weight:600;border:1px solid {_mode_color}44;">
+            {_mode_icon} {_mode_name} · Доска: {M} м
+        </span>
     </div>""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)

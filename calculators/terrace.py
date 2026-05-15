@@ -80,12 +80,17 @@ def get_1d_symmetric_pieces(L, M, min_cut_length=0.3, min_stagger=0.4):
     return row_A
 
 
-def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards, min_cut_length=0.3, min_stagger=0.4):
+def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards,
+                               min_cut_length=0.3, min_stagger=0.4,
+                               mode='economy'):
     """
-    Перебирает все типоразмеры досок в коллекции и выбирает тот,
-    который даёт минимальную стоимость (= минимальную обрезь).
+    Перебирает все типоразмеры досок в коллекции и выбирает оптимальный.
+    mode='economy'   — минимизация общей стоимости (с учётом отходов).
+    mode='symmetric' — приоритет красивой симметричной раскладки (нулевые отходы),
+                       затем минимальное число досок.
     """
     best_cost = float('inf')
+    best_waste = float('inf')
     best_layout = None
     best_joints = None
     best_base_board = None
@@ -123,19 +128,27 @@ def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards, min_cut
             if not placed:
                 bins.append(p)
 
-        total_cost = len(bins) * base_board['board_cost']
-        # Штраф за отходы: добавляем стоимость выброшенного материала
-        # (цена за метр × суммарные отходы), чтобы раскладка без отходов
-        # была приоритетнее, даже если кол-во досок одинаковое по цене
         waste_m = sum(round(M - b, 3) for b in bins)
+        total_cost = len(bins) * base_board['board_cost']
         cost_per_m = base_board['board_cost'] / M if M > 0 else 0
-        total_cost += waste_m * cost_per_m  # реальная стоимость отходов
 
-        if total_cost < best_cost:
-            best_cost = total_cost
-            best_layout = layout_matrix
-            best_joints = joints
-            best_base_board = base_board
+        if mode == 'symmetric':
+            # Симметричный режим: сначала минимум отходов, потом минимум стоимости
+            if waste_m < best_waste or (abs(waste_m - best_waste) < 0.01 and total_cost < best_cost):
+                best_waste = waste_m
+                best_cost = total_cost
+                best_layout = layout_matrix
+                best_joints = joints
+                best_base_board = base_board
+        else:
+            # Эконом режим: минимизация общей стоимости с учётом отходов
+            effective_cost = total_cost + waste_m * cost_per_m
+            if effective_cost < best_cost:
+                best_cost = effective_cost
+                best_waste = waste_m
+                best_layout = layout_matrix
+                best_joints = joints
+                best_base_board = base_board
 
     return best_layout, best_joints, best_base_board
 
