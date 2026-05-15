@@ -124,6 +124,12 @@ def get_best_symmetric_layout(row_lengths_arr, eff_w, collection_boards, min_cut
                 bins.append(p)
 
         total_cost = len(bins) * base_board['board_cost']
+        # Штраф за отходы: добавляем стоимость выброшенного материала
+        # (цена за метр × суммарные отходы), чтобы раскладка без отходов
+        # была приоритетнее, даже если кол-во досок одинаковое по цене
+        waste_m = sum(round(M - b, 3) for b in bins)
+        cost_per_m = base_board['board_cost'] / M if M > 0 else 0
+        total_cost += waste_m * cost_per_m  # реальная стоимость отходов
 
         if total_cost < best_cost:
             best_cost = total_cost
